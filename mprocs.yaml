@@ -1,0 +1,5 @@
+procs:
+  agent1: pnpm tauri dev --no-watch
+  agent2: pnpm tauri dev --no-watch
+  ui: pnpm dev
+
