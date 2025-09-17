@@ -1,26 +1,24 @@
-use std::time::SystemTime;
-
 use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError, EncodeError};
-use p2panda_core::{Body, Extension, Header, PrivateKey, PruneFlag};
-use p2panda_store::{LocalLogStore, LogStore, MemoryStore};
+use p2panda_core::{Body, Extension, Hash, PruneFlag};
+use p2panda_spaces::OperationId;
 use serde::{Deserialize, Serialize};
 
-use crate::chat::LogId;
+use crate::chat::{ChatId, LogId};
+
+pub type SpacesArgs = p2panda_spaces::message::SpacesArgs<ChatId, ()>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Extensions {
-   pub log_id: LogId,
+    pub log_id: LogId,
 
-    #[serde(
-        rename = "prune",
-        skip_serializing_if = "PruneFlag::is_not_set",
-        default = "PruneFlag::default"
-    )]
-   pub prune_flag: PruneFlag,
+    /// This determines whether this is a normal chat message or a space control message.
+    pub spaces_args: Option<SpacesArgs>,
 }
 
+pub type Header = p2panda_core::Header<Extensions>;
+
 impl Extension<LogId> for Extensions {
-    fn extract(header: &Header<Self>) -> Option<LogId> {
+    fn extract(header: &Header) -> Option<LogId> {
         header
             .extensions
             .as_ref()
@@ -29,61 +27,45 @@ impl Extension<LogId> for Extensions {
 }
 
 impl Extension<PruneFlag> for Extensions {
-    fn extract(header: &Header<Self>) -> Option<PruneFlag> {
-        header
-            .extensions
-            .as_ref()
-            .map(|extensions| extensions.prune_flag.clone())
+    fn extract(_header: &Header) -> Option<PruneFlag> {
+        Some(PruneFlag::new(false))
     }
 }
 
-pub async fn create_operation<S: LogStore<LogId, Extensions>>(
-    store: &mut S,
-    log_id: LogId,
-    private_key: &PrivateKey,
-    body: Option<&[u8]>,
-) -> Result<(Header<Extensions>, Option<Body>), S::Error> {
-    let body = body.map(Body::new);
-    let public_key = private_key.public_key();
-
-    let latest_operation = store.latest_operation(&public_key, &log_id).await?;
-
-    let (seq_num, backlink) = match latest_operation {
-        Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
-        None => (0, None),
-    };
-
-    let timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("time from operation system")
-        .as_secs();
-
-    let extensions = Extensions {
-        log_id,
-        prune_flag: PruneFlag::new(false),
-    };
-
-    let mut header = Header {
-        version: 1,
-        public_key,
-        signature: None,
-        payload_size: body.as_ref().map_or(0, |body| body.size()),
-        payload_hash: body.as_ref().map(|body| body.hash()),
-        timestamp,
-        seq_num,
-        backlink,
-        previous: vec![],
-        extensions: Some(extensions),
-    };
-    header.sign(private_key);
-
-    Ok((header, body))
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GroupControlMessage {
+    pub hash: Hash,
+    pub author: p2panda_spaces::ActorId,
+    pub spaces_args: SpacesArgs,
 }
 
-pub fn encode_gossip_message(
-    header: &Header<Extensions>,
-    body: Option<&Body>,
-) -> Result<Vec<u8>, EncodeError> {
+impl p2panda_spaces::message::AuthoredMessage for GroupControlMessage {
+    fn id(&self) -> OperationId {
+        OperationId::from(self.hash.clone())
+    }
+
+    fn author(&self) -> p2panda_spaces::ActorId {
+        self.author
+    }
+}
+
+impl p2panda_spaces::message::SpacesMessage<ChatId, ()> for GroupControlMessage {
+    fn args(&self) -> &SpacesArgs {
+        &self.spaces_args
+    }
+}
+
+impl GroupControlMessage {
+    pub fn from_header(hash: Hash, header: Header) -> Option<Self> {
+        Some(Self {
+            hash,
+            author: header.public_key.into(),
+            spaces_args: header.extensions?.spaces_args?,
+        })
+    }
+}
+
+pub fn encode_gossip_message(header: &Header, body: Option<&Body>) -> Result<Vec<u8>, EncodeError> {
     encode_cbor(&(header.to_bytes(), body.map(|body| body.to_bytes())))
 }
 

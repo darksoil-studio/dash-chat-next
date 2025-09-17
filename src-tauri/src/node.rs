@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -18,10 +19,8 @@ use tokio::task;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tracing::{debug, error, warn};
 
-use crate::chat::{AuthorStore, Chat, LogId};
-use crate::operation::{
-    create_operation, decode_gossip_message, encode_gossip_message, Extensions,
-};
+use crate::chat::{AuthorStore, ChatId, LogId};
+use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions};
 
 // const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
@@ -42,31 +41,33 @@ impl Default for Config {
 
 #[derive(Clone, Debug)]
 pub struct Node {
-    op_store: Arc<RwLock<MemoryStore<LogId, Extensions>>>,
-    network: Network<Chat>,
-    tx: mpsc::Sender<ToNetwork>,
-    author_store: Arc<RwLock<AuthorStore>>,
+    op_store: MemoryStore<LogId, Extensions>,
+    network: Network<ChatId>,
+    chats: Arc<RwLock<HashMap<ChatId, ChatNetwork>>>,
+    author_store: AuthorStore,
     config: Config,
     private_key: PrivateKey,
 }
 
-impl Node {
-    pub fn chat() -> Chat {
-        Chat::new([11; 32])
-    }
+#[derive(Clone, Debug)]
+pub struct ChatNetwork {
+    sender: mpsc::Sender<ToNetwork>,
+}
 
+impl Node {
     pub async fn new(private_key: PrivateKey, config: Config) -> Result<Self> {
         // Launch an p2p network.
         let network_id = Hash::new([88; 32]);
 
         let mdns = LocalDiscovery::new();
 
-        let operation_store = MemoryStore::<LogId, Extensions>::new();
-        let mut author_store = AuthorStore::new();
+        let op_store = MemoryStore::<LogId, Extensions>::new();
+        let author_store = AuthorStore::new();
 
-        author_store
-            .add_author(Self::chat(), private_key.public_key())
-            .await;
+        // TODO: add author whenever adding or joining a group
+        // author_store
+        //     .add_author(Self::chat_id(), private_key.public_key())
+        //     .await;
 
         // let relay_url = RELAY_ENDPOINT.parse()?;
 
@@ -78,7 +79,7 @@ impl Node {
             });
         // .relay(relay_url, false, 0);
 
-        let sync_protocol = LogSyncProtocol::new(author_store.clone(), operation_store.clone());
+        let sync_protocol = LogSyncProtocol::new(author_store.clone(), op_store.clone());
         let sync_config = SyncConfiguration::new(sync_protocol);
         network_builder = network_builder.sync(sync_config);
 
@@ -91,9 +92,30 @@ impl Node {
         // }
 
         let network = network_builder.build().await.context("spawn p2p network")?;
+        let chats = Arc::new(RwLock::new(HashMap::new()));
 
+        // TODO: subscribe to group when creating them and when loading the node
         // let topic = config.topic.clone();
-        let (network_tx, network_rx, gossip_ready) = network.subscribe(Self::chat()).await?;
+
+        Ok(Self {
+            op_store,
+            author_store,
+            network,
+            chats,
+            config,
+            private_key,
+        })
+    }
+
+    /// Internal function to start the necessary tasks for processing chat
+    /// network activity.
+    ///
+    /// This must be called:
+    /// - when created a new chat
+    /// - when initializing the node, for each existing chat
+    async fn initialize_chat(&self, chat_id: ChatId) -> anyhow::Result<()> {
+        let (network_tx, network_rx, gossip_ready) =
+            self.network.subscribe(chat_id.clone()).await?;
 
         task::spawn(async move {
             if gossip_ready.await.is_ok() {
@@ -125,7 +147,7 @@ impl Node {
                     None
                 }
             })
-            .ingest(operation_store.clone(), 128)
+            .ingest(self.op_store.clone(), 128)
             .filter_map(|result| match result {
                 Ok(operation) => Some(operation),
                 Err(err) => {
@@ -135,14 +157,14 @@ impl Node {
             });
 
         {
-            let mut author_store = author_store.clone();
+            let mut author_store = self.author_store.clone();
 
+            let topic = chat_id.clone();
             task::spawn(async move {
                 while let Some(operation) = stream.next().await {
                     // let log_id: Option<LogId> = operation.header.extension();
-                    let topic = Self::chat();
                     author_store
-                        .add_author(topic, operation.header.public_key)
+                        .add_author(topic.clone(), operation.header.public_key)
                         .await;
 
                     let body_len = operation.body.as_ref().map_or(0, |body| body.size());
@@ -156,37 +178,43 @@ impl Node {
             });
         }
 
-        Ok(Self {
-            tx: network_tx,
-            op_store: Arc::new(RwLock::new(operation_store)),
-            author_store: Arc::new(RwLock::new(author_store)),
-            network,
-            config,
-            private_key,
-        })
+        let chat_network = ChatNetwork { sender: network_tx };
+        self.chats.write().await.insert(chat_id, chat_network);
+
+        Ok(())
     }
 
-    pub async fn get_messages(&self) -> anyhow::Result<Vec<String>> {
-        let author = self.author_store.clone().read_owned().await;
-        let Some(authors) = author.authors(&Self::chat()).await else {
+    pub async fn create_group(&self) -> anyhow::Result<()> {
+        let chat_id = ChatId::random();
+        self.initialize_chat(chat_id).await?;
+
+        todo!("use Manager to actually create the group");
+
+        Ok(())
+    }
+
+    pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<String>> {
+        let Some(authors) = self.author_store.authors(&chat_id).await else {
             return Ok(vec![]);
         };
 
         let mut messages = vec![];
 
         for author in authors {
-            let mut m = self.get_messages_from(author).await?;
+            let mut m = self.get_messages_from(chat_id.clone(), author).await?;
             messages.append(&mut m);
         }
 
         Ok(messages)
     }
 
-    pub async fn get_messages_from(&self, public_key: PublicKey) -> anyhow::Result<Vec<String>> {
-        let store = self.op_store.clone().read_owned().await;
-
-        let log_id = Self::chat().log_id(public_key);
-        let log = store.get_log(&public_key, &log_id, None).await?;
+    pub async fn get_messages_from(
+        &self,
+        chat_id: ChatId,
+        public_key: PublicKey,
+    ) -> anyhow::Result<Vec<String>> {
+        let log_id = (chat_id, public_key);
+        let log = self.op_store.get_log(&public_key, &log_id, None).await?;
 
         let Some(log) = log else {
             return Ok(vec![]);
@@ -206,15 +234,18 @@ impl Node {
         Ok(messages)
     }
 
-    pub async fn send_message(&self, message: String) -> anyhow::Result<()> {
+    pub async fn send_message(&self, chat_id: ChatId, message: String) -> anyhow::Result<()> {
         let body = Body::new(message.as_bytes());
         let public_key = self.private_key.public_key();
 
-        let log_id = Self::chat().log_id(public_key);
+        let Some(chat_network) = self.chats.read().await.get(&chat_id).cloned() else {
+            return Err(anyhow!("Chat not found"));
+        };
 
-        let store = self.op_store.clone().write_owned().await;
+        let log_id = (chat_id, public_key);
 
-        let latest_operation = store.latest_operation(&public_key, &log_id).await?;
+        // TODO: this is not atomic, see https://github.com/p2panda/p2panda/issues/798
+        let latest_operation = self.op_store.latest_operation(&public_key, &log_id).await?;
 
         let (seq_num, backlink) = match latest_operation {
             Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
@@ -228,7 +259,7 @@ impl Node {
 
         let extensions = Extensions {
             log_id: log_id.clone(),
-            prune_flag: PruneFlag::new(false),
+            spaces_args: None,
         };
 
         let mut header = Header {
@@ -246,7 +277,7 @@ impl Node {
         header.sign(&self.private_key);
 
         p2panda_stream::operation::ingest_operation(
-            &mut store.clone(),
+            &mut self.op_store.clone(),
             header.clone(),
             Some(body.clone()),
             header.to_bytes(),
@@ -255,7 +286,8 @@ impl Node {
         )
         .await?;
 
-        self.tx
+        chat_network
+            .sender
             .send(ToNetwork::Message {
                 bytes: encode_gossip_message(&header, Some(&body))?,
             })

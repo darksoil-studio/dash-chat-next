@@ -1,28 +1,37 @@
+use std::str::FromStr;
+
 use node::Node;
 use p2panda_core::PrivateKey;
 use tauri::{Manager, State};
 use tauri_plugin_log::log::LevelFilter;
 
+use crate::chat::ChatId;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-async fn send_message(message: &str, node: State<'_, Node>) -> Result<(), String> {
-    match node.send_message(message.to_string()).await {
+async fn send_message(chat_id: &str, message: &str, node: State<'_, Node>) -> Result<(), String> {
+    match node
+        .send_message(ChatId::from_str(chat_id).unwrap(), message.to_string())
+        .await
+    {
         Ok(_) => Ok(()),
         Err(err) => Err(format!("Error sending message: {err:?}")),
     }
 }
 
 #[tauri::command]
-async fn get_messages(node: State<'_, Node>) -> Result<Vec<String>, String> {
-    match node.get_messages().await {
+async fn get_messages(chat_id: &str, node: State<'_, Node>) -> Result<Vec<String>, String> {
+    match node.get_messages(ChatId::from_str(chat_id).unwrap()).await {
         Ok(messages) => Ok(messages),
         Err(err) => Err(format!("Failed to get messages: {err:?}")),
     }
 }
 
 mod chat;
+mod forge;
 mod node;
 mod operation;
+pub mod spaces;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
