@@ -15,7 +15,9 @@ async function greet() {
 async function getMessages() {
   if (greetMsgEl && greetInputEl) {
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsgEl.textContent = await invoke("get_messages", {});
+    const messages = await invoke("get_messages", {});
+    console.log(messages)
+    greetMsgEl.textContent = JSON.stringify(messages);
   }
 }
 

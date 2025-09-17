@@ -1,4 +1,5 @@
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -41,27 +42,31 @@ impl Default for Config {
 
 #[derive(Clone, Debug)]
 pub struct Node {
-    store: Arc<RwLock<MemoryStore<LogId, Extensions>>>,
+    op_store: Arc<RwLock<MemoryStore<LogId, Extensions>>>,
     network: Network<Chat>,
+    tx: mpsc::Sender<ToNetwork>,
+    author_store: Arc<RwLock<AuthorStore>>,
     config: Config,
     private_key: PrivateKey,
 }
 
 impl Node {
     pub fn chat() -> Chat {
-        Chat::new([0; 32])
+        Chat::new([11; 32])
     }
 
     pub async fn new(private_key: PrivateKey, config: Config) -> Result<Self> {
-        let (to_udp_tx, mut to_udp_rx) = mpsc::channel::<Vec<u8>>(128);
-
         // Launch an p2p network.
-        let network_id = Hash::new(NETWORK_ID.as_bytes());
+        let network_id = Hash::new([88; 32]);
 
         let mdns = LocalDiscovery::new();
 
         let operation_store = MemoryStore::<LogId, Extensions>::new();
-        let author_store = AuthorStore::new();
+        let mut author_store = AuthorStore::new();
+
+        author_store
+            .add_author(Self::chat(), private_key.public_key())
+            .await;
 
         // let relay_url = RELAY_ENDPOINT.parse()?;
 
@@ -147,23 +152,14 @@ impl Node {
                         hash = %operation.hash,
                         "received operation"
                     );
-
-                    match operation.body {
-                        Some(body) => {
-                            if to_udp_tx.send(body.to_bytes()).await.is_err() {
-                                break;
-                            }
-                        }
-                        None => {
-                            continue;
-                        }
-                    }
                 }
             });
         }
 
         Ok(Self {
-            store: Arc::new(RwLock::new(operation_store)),
+            tx: network_tx,
+            op_store: Arc::new(RwLock::new(operation_store)),
+            author_store: Arc::new(RwLock::new(author_store)),
             network,
             config,
             private_key,
@@ -171,18 +167,29 @@ impl Node {
     }
 
     pub async fn get_messages(&self) -> anyhow::Result<Vec<String>> {
-        let store = self.store.clone().read_owned().await;
+        let author = self.author_store.clone().read_owned().await;
+        let Some(authors) = author.authors(&Self::chat()).await else {
+            return Ok(vec![]);
+        };
 
-        let log = store
-            .get_log(
-                &self.private_key.public_key(),
-                &Self::chat().log_id(self.private_key.public_key()),
-                None,
-            )
-            .await?;
+        let mut messages = vec![];
+
+        for author in authors {
+            let mut m = self.get_messages_from(author).await?;
+            messages.append(&mut m);
+        }
+
+        Ok(messages)
+    }
+
+    pub async fn get_messages_from(&self, public_key: PublicKey) -> anyhow::Result<Vec<String>> {
+        let store = self.op_store.clone().read_owned().await;
+
+        let log_id = Self::chat().log_id(public_key);
+        let log = store.get_log(&public_key, &log_id, None).await?;
 
         let Some(log) = log else {
-            return Err(anyhow!("Failed to get my log"));
+            return Ok(vec![]);
         };
 
         let messages = log
@@ -205,7 +212,7 @@ impl Node {
 
         let log_id = Self::chat().log_id(public_key);
 
-        let mut store = self.store.clone().write_owned().await;
+        let store = self.op_store.clone().write_owned().await;
 
         let latest_operation = store.latest_operation(&public_key, &log_id).await?;
 
@@ -238,14 +245,20 @@ impl Node {
         };
         header.sign(&self.private_key);
 
-        store
-            .insert_operation(
-                header.hash(),
-                &header,
-                Some(&body),
-                header.to_bytes().as_slice(),
-                &log_id,
-            )
+        p2panda_stream::operation::ingest_operation(
+            &mut store.clone(),
+            header.clone(),
+            Some(body.clone()),
+            header.to_bytes(),
+            &log_id,
+            false,
+        )
+        .await?;
+
+        self.tx
+            .send(ToNetwork::Message {
+                bytes: encode_gossip_message(&header, Some(&body))?,
+            })
             .await?;
 
         Ok(())

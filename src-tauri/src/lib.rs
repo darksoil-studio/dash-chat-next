@@ -13,9 +13,9 @@ async fn send_message(message: &str, node: State<'_, Node>) -> Result<(), String
 }
 
 #[tauri::command]
-async fn get_messages(node: State<'_, Node>) -> Result<(), String> {
+async fn get_messages(node: State<'_, Node>) -> Result<Vec<String>, String> {
     match node.get_messages().await {
-        Ok(_) => Ok(()),
+        Ok(messages) => Ok(messages),
         Err(err) => Err(format!("Failed to get messages: {err:?}")),
     }
 }
