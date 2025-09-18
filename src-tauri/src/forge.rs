@@ -11,7 +11,6 @@ use crate::{
     spaces::store::TestStore,
 };
 
-pub type SpacesStore = Arc<RwLock<TestStore>>;
 pub type OpStore = p2panda_store::MemoryStore<LogId, Extensions>;
 
 #[derive(Clone, Debug)]
