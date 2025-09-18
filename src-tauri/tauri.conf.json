@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.guillem.p2panda-tauri-chat",
   "build": {
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../build"
   },
   "app": {
     "withGlobalTauri": true,

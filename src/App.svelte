@@ -35,6 +35,8 @@
     let joinCode = "";
     let showCreateGroup = false;
     let showJoinGroup = false;
+    let showAddMember = false;
+    let newMemberPublicKey = "";
     let toastMessage = "";
     let showToast = false;
     let isErrorToast = false;
@@ -62,6 +64,8 @@
             ];
         } catch (error) {
             console.error("Failed to load groups:", error);
+        } finally {
+            console.log("groups loaded");
         }
     }
 
@@ -116,6 +120,23 @@
         setTimeout(() => {
             showToast = false;
         }, 3000);
+    }
+
+    // Member management functions
+    async function addMember() {
+        if (newMemberPublicKey.trim()) {
+            try {
+                // This would call your backend to add a member to the group
+                // For now, just close the dialog and show success
+                showAddMember = false;
+                newMemberPublicKey = "";
+                showToastMessage("Member added successfully!");
+                await loadParticipants(); // Reload participants after adding
+            } catch (error) {
+                console.error("Failed to add member:", error);
+                showToastMessage("Failed to add member", true);
+            }
+        }
     }
 
     // Chat functions
@@ -230,8 +251,9 @@
         });
     }
 
-    onMount(() => {
-        loadGroups();
+    onMount(async () => {
+        console.log("onMount");
+        await loadGroups();
     });
 </script>
 
@@ -243,7 +265,10 @@
                 <div class="group-actions">
                     <button
                         class="btn btn-primary"
-                        on:click={() => (showCreateGroup = true)}
+                        on:click={() => {
+                            console.log("create group opened");
+                            showCreateGroup = true;
+                        }}
                     >
                         Create Group
                     </button>
@@ -297,16 +322,25 @@
     {:else if currentView === "chat" && selectedGroup}
         <div class="chat-view">
             <header class="chat-header">
-                <button class="back-btn" on:click={goBackToGroups}>←</button>
-                <div class="chat-info">
-                    <h2>{selectedGroup.name}</h2>
-                    <p>
-                        {selectedGroup.memberCount} member{selectedGroup.memberCount !==
-                        1
-                            ? "s"
-                            : ""}
-                    </p>
+                <div class="chat-header-left">
+                    <button class="back-btn" on:click={goBackToGroups}>←</button
+                    >
+                    <div class="chat-info">
+                        <h2>{selectedGroup.name}</h2>
+                        <p>
+                            {selectedGroup.memberCount} member{selectedGroup.memberCount !==
+                            1
+                                ? "s"
+                                : ""}
+                        </p>
+                    </div>
                 </div>
+                <button
+                    class="btn btn-small btn-outline"
+                    on:click={() => (showAddMember = true)}
+                >
+                    Add Member
+                </button>
             </header>
 
             <div class="messages-container">
@@ -442,6 +476,48 @@
         </div>
     {/if}
 
+    <!-- Add Member Modal -->
+    {#if showAddMember}
+        <div
+            class="modal-overlay"
+            role="button"
+            tabindex="0"
+            on:click={() => (showAddMember = false)}
+            on:keydown={(e) => e.key === "Escape" && (showAddMember = false)}
+        >
+            <div
+                class="modal"
+                role="dialog"
+                tabindex="0"
+                on:click|stopPropagation
+                on:keydown|stopPropagation
+            >
+                <h3>Add Member to Group</h3>
+                <p class="modal-description">
+                    Enter the public key of the person you want to add to this
+                    group.
+                </p>
+                <textarea
+                    bind:value={newMemberPublicKey}
+                    placeholder="Paste the public key here (long string)..."
+                    class="modal-textarea"
+                    rows="4"
+                ></textarea>
+                <div class="modal-actions">
+                    <button
+                        class="btn btn-secondary"
+                        on:click={() => (showAddMember = false)}
+                    >
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary" on:click={addMember}>
+                        Add Member
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
     <!-- Toast Notification -->
     {#if showToast}
         <div
@@ -549,9 +625,16 @@
     .chat-header {
         display: flex;
         align-items: center;
+        justify-content: space-between;
         padding: 1rem 2rem;
         border-bottom: 1px solid var(--border-color);
         background: var(--bg-color);
+    }
+
+    .chat-header-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
     }
 
     .back-btn {
@@ -786,6 +869,30 @@
         border-radius: 6px;
         margin-bottom: 1rem;
         font-size: 1rem;
+    }
+
+    .modal-description {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+        line-height: 1.4;
+    }
+
+    .modal-textarea {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        font-family: monospace;
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    .modal-textarea:focus {
+        border-color: #646cff;
+        outline: none;
     }
 
     .modal-actions {

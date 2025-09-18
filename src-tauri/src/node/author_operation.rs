@@ -8,7 +8,7 @@ pub type OpStore = p2panda_store::MemoryStore<LogId, Extensions>;
 
 impl Node {
     pub(super) async fn author_operation(
-        &mut self,
+        &self,
         chat_id: &ChatId,
         payload: Payload,
     ) -> Result<(), anyhow::Error> {
@@ -19,7 +19,7 @@ impl Node {
         } = create_operation(&self.op_store, &self.private_key, chat_id, payload).await?;
 
         p2panda_stream::operation::ingest_operation(
-            &mut self.op_store,
+            &mut self.op_store.clone(),
             header.clone(),
             body.clone(),
             header.to_bytes(),

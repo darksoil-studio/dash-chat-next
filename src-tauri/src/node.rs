@@ -108,7 +108,7 @@ impl Node {
     }
 
     /// Create a new chat Space, and subscribe to the Topic for this chat.
-    pub async fn create_chat(&mut self) -> anyhow::Result<ChatNetwork> {
+    pub async fn create_chat(&self) -> anyhow::Result<(ChatId, ChatNetwork)> {
         let chat_id = ChatId::random();
         let chat = self.initialize_chat(chat_id).await?;
 
@@ -125,12 +125,32 @@ impl Node {
                 .await?;
         }
 
-        Ok(chat)
+        Ok((chat_id, chat))
     }
 
-    /// "Approaching" a chat means subscribing to messages.
-    /// This needs to be accompanied by be added as a member of the chat Space by an existing member.
-    pub async fn enter_chat(&mut self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+    pub async fn add_member(&self, chat_id: ChatId, public_key: PublicKey) -> anyhow::Result<()> {
+        let chat = self
+            .chats
+            .read()
+            .await
+            .get(&chat_id)
+            .cloned()
+            .ok_or(anyhow!("Chat not found"))?;
+        chat.manager
+            .space(chat_id)
+            .await?
+            .unwrap()
+            // TODO: we need an access level for only adding but not removing members
+            .add(public_key.into(), Access::manage())
+            .await?;
+
+        Ok(())
+    }
+
+    /// "Joining" a chat means subscribing to messages for that chat.
+    /// This needs to be accompanied by being added as a member of the chat Space by an existing member
+    /// -- you're not fully a member until someone adds you.
+    pub async fn join_chat(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
         let chat = self.initialize_chat(chat_id).await?;
 
         Ok(chat)

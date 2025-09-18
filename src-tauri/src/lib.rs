@@ -7,6 +7,21 @@ use tauri_plugin_log::log::LevelFilter;
 
 use crate::chat::ChatId;
 
+#[tauri::command]
+async fn create_chat(node: State<'_, Node>) -> Result<String, String> {
+    match node.create_chat().await {
+        Ok((chat_id, _)) => Ok(chat_id.to_string()),
+        Err(err) => Err(format!("Error sending message: {err:?}")),
+    }
+}
+#[tauri::command]
+async fn join_chat(chat_id: &str, node: State<'_, Node>) -> Result<(), String> {
+    match node.join_chat(ChatId::from_str(chat_id).unwrap()).await {
+        Ok(_) => Ok(()),
+        Err(err) => Err(format!("Error sending message: {err:?}")),
+    }
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 async fn send_message(chat_id: &str, message: &str, node: State<'_, Node>) -> Result<(), String> {
