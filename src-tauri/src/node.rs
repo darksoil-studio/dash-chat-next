@@ -9,6 +9,7 @@ use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
 use p2panda_auth::Access;
+use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use p2panda_core::{Body, Hash, Header, PrivateKey, PruneFlag, PublicKey};
 use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_discovery::Discovery;
@@ -27,6 +28,7 @@ use tracing::{debug, error, warn};
 
 use crate::chat::{AuthorStore, ChatId, LogId};
 use crate::forge::DashForge;
+use crate::message::ChatMessage;
 use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions, Payload};
 use crate::spaces::{DashGroup, DashManager, DashSpace};
 
@@ -108,7 +110,7 @@ impl Node {
     }
 
     /// Create a new chat Space, and subscribe to the Topic for this chat.
-    pub async fn create_chat(&self) -> anyhow::Result<(ChatId, ChatNetwork)> {
+    pub async fn create_group(&self) -> anyhow::Result<(ChatId, ChatNetwork)> {
         let chat_id = ChatId::random();
         let chat = self.initialize_chat(chat_id).await?;
 
@@ -147,16 +149,37 @@ impl Node {
         Ok(())
     }
 
+    pub async fn get_members(
+        &self,
+        chat_id: ChatId,
+    ) -> anyhow::Result<Vec<(p2panda_spaces::ActorId, Access)>> {
+        let chats = self.chats.read().await;
+        let chat = chats
+            .get(&chat_id)
+            .cloned()
+            .ok_or(anyhow!("Chat not found"))?;
+
+        let members = chat
+            .manager
+            .space(chat_id)
+            .await?
+            .unwrap()
+            .members()
+            .await?;
+
+        Ok(members)
+    }
+
     /// "Joining" a chat means subscribing to messages for that chat.
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
-    pub async fn join_chat(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
         let chat = self.initialize_chat(chat_id).await?;
 
         Ok(chat)
     }
 
-    pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<String>> {
+    pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
         let Some(authors) = self.author_store.authors(&chat_id).await else {
             return Ok(vec![]);
         };
@@ -175,7 +198,7 @@ impl Node {
         &self,
         chat_id: ChatId,
         public_key: PublicKey,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> anyhow::Result<Vec<ChatMessage>> {
         let log_id = (chat_id, public_key);
         let log = self.op_store.get_log(&public_key, &log_id, None).await?;
 
@@ -190,15 +213,15 @@ impl Node {
                     return Err(anyhow!("No body?"));
                 };
 
-                Ok(String::from_utf8(body.to_bytes())?)
+                Ok(decode_cbor(body.to_bytes().as_slice())?)
             })
-            .collect::<anyhow::Result<Vec<String>>>()?;
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         Ok(messages)
     }
 
-    pub async fn send_message(&self, chat_id: ChatId, message: String) -> anyhow::Result<()> {
-        let body = Body::new(message.as_bytes());
+    pub async fn send_message(&self, chat_id: ChatId, message: ChatMessage) -> anyhow::Result<()> {
+        let body = Body::new(&encode_cbor(&message)?);
         let public_key = self.private_key.public_key();
 
         let Some(chat_network) = self.chats.read().await.get(&chat_id).cloned() else {

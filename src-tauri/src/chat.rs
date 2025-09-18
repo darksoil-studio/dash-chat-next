@@ -15,6 +15,7 @@ use tokio::sync::RwLock;
 pub type LogId = (ChatId, PublicKey);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(into = "String", try_from = "String")]
 pub struct ChatId([u8; 32]);
 
 impl ChatId {
@@ -27,6 +28,19 @@ impl ChatId {
     }
 }
 
+impl From<ChatId> for String {
+    fn from(chat_id: ChatId) -> Self {
+        chat_id.to_string()
+    }
+}
+
+impl TryFrom<String> for ChatId {
+    type Error = Infallible;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(ChatId::from_str(&value).unwrap())
+    }
+}
+
 impl std::fmt::Display for ChatId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(self.0))
@@ -34,11 +48,15 @@ impl std::fmt::Display for ChatId {
 }
 
 impl FromStr for ChatId {
-    type Err = Infallible;
+    type Err = anyhow::Error;
 
     fn from_str(topic: &str) -> Result<Self, Self::Err> {
         // maybe base64?
-        Ok(Self(Hash::new(topic.as_bytes()).into()))
+        Ok(Self(
+            hex::decode(topic)?
+                .try_into()
+                .map_err(|e| anyhow::anyhow!("Invalid ChatId: {e:?}"))?,
+        ))
     }
 }
 

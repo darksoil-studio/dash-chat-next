@@ -1,67 +1,65 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import { onMount } from "svelte";
+    import { onDestroy, onMount } from "svelte";
     import "./styles.css";
 
     // Types
     interface Group {
-        id: string;
+        id: GroupId;
         name: string;
         memberCount: number;
-        joinCode: string;
     }
 
     interface ChatMessage {
-        id: string;
         content: string;
-        author: Uint8Array; // 32-byte public key
+        author: PubKey; // 32-byte public key
         timestamp: number;
     }
 
     interface Participant {
-        publicKey: Uint8Array;
+        publicKey: PubKey;
         name: string;
         avatar: string; // base64 dataUrl
     }
 
+    type PubKey = string;
+    type GroupId = string;
+
     // State
-    let currentView: "groups" | "chat" = "groups";
-    let selectedGroup: Group | null = null;
-    let groups: Group[] = [];
-    let messages: ChatMessage[] = [];
-    let participants: Map<string, Participant> = new Map();
-    let newMessage = "";
-    let newGroupName = "";
-    let joinCode = "";
-    let showCreateGroup = false;
-    let showJoinGroup = false;
-    let showAddMember = false;
-    let newMemberPublicKey = "";
-    let toastMessage = "";
-    let showToast = false;
-    let isErrorToast = false;
+    let currentView: "groups" | "chat" = $state("groups");
+    let selectedGroup: Group | null = $state(null);
+    let groups: Group[] = $state([]);
+    let messages: ChatMessage[] = $state([]);
+    let participants: Map<PubKey, Participant> = $state(new Map());
+    let newMessage = $state("");
+    let newGroupName = $state("");
+    let joinCode = $state("");
+    let showCreateGroup = $state(false);
+    let showJoinGroup = $state(false);
+    let showAddMember = $state(false);
+    let newMemberPublicKey: PubKey = $state("");
+    let myPublicKey: PubKey = $state("");
+    let toastMessage = $state("");
+    let showToast = $state(false);
+    let isErrorToast = $state(false);
+
+    let groupsInterval: any;
+    let membersInterval: any;
 
     // Group management functions
     async function loadGroups() {
         try {
-            // This would call your backend to get groups
-            // For now, using mock data
-            groups = [
-                {
-                    id: "1",
-                    name: "General Chat",
-                    memberCount: 5,
-                    joinCode:
-                        "abc123def456ghi789jkl012mno345pqr678stu901vwx234yz",
-                },
-                {
-                    id: "2",
-                    name: "Project Discussion",
-                    memberCount: 3,
-                    joinCode:
-                        "xyz789abc123def456ghi789jkl012mno345pqr678stu901vwx",
-                },
-            ];
+            for (const group of groups) {
+                try {
+                    const members: PubKey[] = await invoke("get_members", {
+                        chatId: group.id,
+                    });
+                    group.memberCount = members.length;
+                } catch (error) {
+                    console.error("Failed to load members:", error);
+                    group.memberCount = -1;
+                }
+            }
         } catch (error) {
             console.error("Failed to load groups:", error);
         } finally {
@@ -74,20 +72,22 @@
         // const ok = newGroupName.trim();
         if (ok) {
             try {
-                // This would call your backend to create a group
-                // For now, just close the dialog
+                const groupId: GroupId = await invoke("create_group", {
+                    name: newGroupName,
+                });
+
+                console.log("[ts] created group, groupId: {}", groupId);
+
+                groups.push({
+                    id: groupId,
+                    name: newGroupName,
+                    memberCount: 1,
+                });
+
                 showCreateGroup = false;
                 newGroupName = "";
-                if (
-                    await invoke("create_chat", {
-                        name: newGroupName,
-                    })
-                ) {
-                    showToastMessage("Group created successfully!");
-                } else {
-                    showToastMessage("Failed to create group", true);
-                }
                 await loadGroups(); // Reload groups after creation
+                showToastMessage("Group created successfully!");
             } catch (error) {
                 console.error("Failed to create group:", error);
                 showToastMessage("Failed to create group", true);
@@ -98,12 +98,14 @@
     async function joinGroup() {
         if (joinCode.trim()) {
             try {
-                // This would call your backend to join a group
-                // For now, just close the dialog
+                await invoke("join_group", {
+                    chatId: joinCode,
+                });
+
                 showJoinGroup = false;
                 joinCode = "";
                 await loadGroups(); // Reload groups after joining
-                showToastMessage("Successfully joined group!");
+                showToastMessage("Group joined successfully!");
             } catch (error) {
                 console.error("Failed to join group:", error);
                 showToastMessage("Failed to join group", true);
@@ -121,6 +123,20 @@
         }
     }
 
+    async function copyMyPublicKey() {
+        try {
+            if (!myPublicKey) {
+                // Get the public key from the backend if we don't have it cached
+                myPublicKey = await invoke("me");
+            }
+            await navigator.clipboard.writeText(myPublicKey);
+            showToastMessage("Public key copied to clipboard!");
+        } catch (error) {
+            console.error("Failed to copy public key:", error);
+            showToastMessage("Failed to copy public key", true);
+        }
+    }
+
     function showToastMessage(message: string, isError = false) {
         toastMessage = message;
         isErrorToast = isError;
@@ -134,10 +150,14 @@
 
     // Member management functions
     async function addMember() {
+        const chatId = selectedGroup?.id;
         if (newMemberPublicKey.trim()) {
             try {
-                // This would call your backend to add a member to the group
-                // For now, just close the dialog and show success
+                await invoke("add_member", {
+                    chatId: chatId,
+                    publicKey: newMemberPublicKey,
+                });
+
                 showAddMember = false;
                 newMemberPublicKey = "";
                 showToastMessage("Member added successfully!");
@@ -167,22 +187,13 @@
         if (!selectedGroup) return;
 
         try {
-            // This would call your backend to get messages for the group
-            // For now, using mock data
-            messages = [
-                {
-                    id: "1",
-                    content: "Hello everyone!",
-                    author: new Uint8Array(32).fill(1),
-                    timestamp: Date.now() - 10000,
-                },
-                {
-                    id: "2",
-                    content: "Hey there! How's everyone doing?",
-                    author: new Uint8Array(32).fill(2),
-                    timestamp: Date.now() - 5000,
-                },
-            ];
+            let msgs: ChatMessage[] = await invoke("get_messages", {
+                chatId: selectedGroup.id,
+            });
+
+            msgs.sort((a, b) => a.timestamp - b.timestamp);
+
+            messages = msgs;
         } catch (error) {
             console.error("Failed to load messages:", error);
         }
@@ -192,25 +203,17 @@
         if (!selectedGroup) return;
 
         try {
-            // This would call your backend to get participants
-            // For now, using mock data
-            const mockParticipants: Participant[] = [
-                {
-                    publicKey: new Uint8Array(32).fill(1),
-                    name: "Alice",
-                    avatar: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiM2MzY2RjEiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMEgxOEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+",
-                },
-                {
-                    publicKey: new Uint8Array(32).fill(2),
-                    name: "Bob",
-                    avatar: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMjAiIGZpbGw9IiNFRjQ0NDQiLz4KPHN2ZyB4PSI4IiB5PSI4IiB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDEyQzE0LjIwOTEgMTIgMTYgMTAuMjA5MSAxNiA4QzE2IDUuNzkwODYgMTQuMjA5MSA0IDEyIDRDOS43OTA4NiA0IDggNS43OTA4NiA4IDhDOCAxMC4yMDkxIDkuNzkwODYgMTIgMTIgMTJaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTIgMTRDOC42ODYyOSAxNCA2IDE2LjY4NjMgNiAyMEgxOEMxOCAxNi42ODYzIDE1LjMxMzcgMTQgMTIgMTRaIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4KPC9zdmc+",
-                },
-            ];
+            const members: string[] = await invoke("get_members", {
+                chatId: selectedGroup.id,
+            });
 
             participants.clear();
-            mockParticipants.forEach((participant) => {
-                const key = Array.from(participant.publicKey).join(",");
-                participants.set(key, participant);
+            members.forEach((participant: string) => {
+                participants.set(participant, {
+                    publicKey: participant,
+                    name: participant,
+                    avatar: "",
+                });
             });
         } catch (error) {
             console.error("Failed to load participants:", error);
@@ -218,16 +221,20 @@
     }
 
     async function sendMessage() {
+        console.log("sendMessage", newMessage, selectedGroup);
         if (newMessage.trim() && selectedGroup) {
             try {
-                // This would call your backend to send a message
-                // For now, just add to local messages
                 const message: ChatMessage = {
-                    id: Date.now().toString(),
                     content: newMessage.trim(),
-                    author: new Uint8Array(32).fill(0), // Current user's key
+                    author: myPublicKey, // Current user's key
                     timestamp: Date.now(),
                 };
+
+                await invoke("send_message", {
+                    chatId: selectedGroup.id,
+                    message,
+                });
+
                 messages = [...messages, message];
                 newMessage = "";
             } catch (error) {
@@ -243,15 +250,21 @@
         }
     }
 
-    function getParticipant(publicKey: Uint8Array): Participant | null {
+    function getParticipant(publicKey: PubKey): Participant | null {
         const key = Array.from(publicKey).join(",");
-        return participants.get(key) || null;
+        return (
+            participants.get(key) || {
+                publicKey,
+                name: publicKey,
+                avatar: "",
+            }
+        );
     }
 
-    function isMyMessage(publicKey: Uint8Array): boolean {
+    function isMyMessage(publicKey: PubKey): boolean {
         // This would check against the current user's public key
         // For now, assuming the first message is from current user
-        return publicKey.every((byte) => byte === 0);
+        return publicKey === myPublicKey;
     }
 
     function formatTimestamp(timestamp: number): string {
@@ -262,8 +275,30 @@
     }
 
     onMount(async () => {
-        console.log("onMount");
         await loadGroups();
+        // Preload the public key for faster copying
+        try {
+            myPublicKey = await invoke("me");
+        } catch (error) {
+            console.error("Failed to load public key:", error);
+        }
+
+        // Set up intervals for polling groups and members
+        groupsInterval = setInterval(async () => {
+            await loadGroups();
+        }, 3000);
+
+        membersInterval = setInterval(async () => {
+            if (selectedGroup) {
+                await loadParticipants();
+            }
+        }, 3000);
+    });
+
+    // Clean up intervals on component destroy
+    onDestroy(() => {
+        clearInterval(groupsInterval);
+        clearInterval(membersInterval);
     });
 </script>
 
@@ -287,6 +322,9 @@
                         on:click={() => (showJoinGroup = true)}
                     >
                         Join Group
+                    </button>
+                    <button class="btn btn-outline" on:click={copyMyPublicKey}>
+                        Copy Pubkey
                     </button>
                 </div>
             </header>
@@ -320,7 +358,7 @@
                             <button
                                 class="btn btn-small btn-outline"
                                 on:click|stopPropagation={() =>
-                                    copyJoinCode(group.joinCode)}
+                                    copyJoinCode(group.id)}
                             >
                                 Copy Join Code
                             </button>
@@ -359,7 +397,7 @@
                         <p>No messages yet. Start the conversation!</p>
                     </div>
                 {:else}
-                    {#each messages as message (message.id)}
+                    {#each messages as message (message.timestamp)}
                         {@const participant = getParticipant(message.author)}
                         {@const isMine = isMyMessage(message.author)}
                         <div

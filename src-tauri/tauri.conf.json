@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "identifier": "com.guillem.p2panda-tauri-chat",
   "build": {
-    "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
     "devUrl": "http://localhost:5174",
     "frontendDist": "../build"
