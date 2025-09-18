@@ -7,7 +7,7 @@ use p2panda_spaces::{auth::orderer::AuthOrderer, types::AuthGroupState, ActorId}
 use super::*;
 
 pub type TestStore =
-    p2panda_spaces::test_utils::MemoryStore<ChatId, GroupControlMessage, TestConditions>;
+    p2panda_spaces::test_utils::MemoryStore<ChatId, SpaceControlMessage, TestConditions>;
 
 pub fn create_test_store(private_key: PrivateKey) -> TestStore {
     let rng = Rng::default();

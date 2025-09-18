@@ -1,3 +1,5 @@
+use crate::spaces::{SpaceControlMessage, SpacesArgs};
+
 use super::*;
 
 impl Node {
@@ -54,12 +56,36 @@ impl Node {
             let mut author_store = self.author_store.clone();
 
             let topic = chat_id.clone();
+            let chats = self.chats.clone();
             task::spawn(async move {
                 while let Some(operation) = stream.next().await {
                     // let log_id: Option<LogId> = operation.header.extension();
                     author_store
                         .add_author(topic.clone(), operation.header.public_key)
                         .await;
+
+                    if let Some(control_message) = operation
+                        .header
+                        .extensions
+                        .and_then(|extensions| extensions.control_message)
+                    {
+                        match control_message.spaces_args {
+                            SpacesArgs::SpaceMembership { space_id, .. }
+                            | SpacesArgs::SpaceUpdate { space_id, .. }
+                            | SpacesArgs::Application { space_id, .. } => {
+                                // TODO: maybe close down the chat tasks if we are kicked out?
+                            }
+                            _ => {}
+                        }
+                        chats
+                            .write()
+                            .await
+                            .get_mut(&topic)
+                            .ok_or(anyhow!("Chat not found"))?
+                            .manager
+                            .process(&control_message)
+                            .await?;
+                    }
 
                     let body_len = operation.body.as_ref().map_or(0, |body| body.size());
                     debug!(
@@ -69,16 +95,15 @@ impl Node {
                         "received operation"
                     );
                 }
+                anyhow::Ok(())
             });
         }
 
         let rng = Rng::default();
 
-        let spaces_store = crate::spaces::store::create_test_store(self.private_key.clone());
+        let spaces_store = crate::spaces::create_test_store(self.private_key.clone());
         let forge = DashForge {
             chat_id,
-            op_store: self.op_store.clone(),
-            gossip_tx: network_tx.clone(),
             private_key: self.private_key.clone(),
         };
 

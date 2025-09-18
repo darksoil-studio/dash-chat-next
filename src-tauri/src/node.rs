@@ -1,3 +1,4 @@
+mod author_operation;
 mod stream_processing;
 
 use std::collections::HashMap;
@@ -10,6 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use p2panda_auth::Access;
 use p2panda_core::{Body, Hash, Header, PrivateKey, PruneFlag, PublicKey};
 use p2panda_discovery::mdns::LocalDiscovery;
+use p2panda_discovery::Discovery;
 use p2panda_encryption::Rng;
 use p2panda_net::config::GossipConfig;
 use p2panda_net::{FromNetwork, Network, NetworkBuilder, SyncConfiguration, ToNetwork, TopicId};
@@ -25,12 +27,12 @@ use tracing::{debug, error, warn};
 
 use crate::chat::{AuthorStore, ChatId, LogId};
 use crate::forge::DashForge;
-use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions};
-use crate::spaces::DashManager;
+use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions, Payload};
+use crate::spaces::{DashGroup, DashManager, DashSpace};
 
 // const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
-const NETWORK_ID: &str = "p2panda-tauri-chat";
+const NETWORK_ID: [u8; 32] = [88; 32];
 
 const DEFAULT_TOPIC: &str = "peers-for-peers";
 
@@ -57,28 +59,20 @@ pub struct Node {
 
 #[derive(Clone, Debug)]
 pub struct ChatNetwork {
-    sender: mpsc::Sender<ToNetwork>,
-    manager: DashManager,
+    pub(crate) sender: mpsc::Sender<ToNetwork>,
+    pub(crate) manager: DashManager,
 }
 
 impl Node {
     pub async fn new(private_key: PrivateKey, config: Config) -> Result<Self> {
-        // Launch an p2p network.
-        let network_id = Hash::new([88; 32]);
-
         let mdns = LocalDiscovery::new();
 
         let op_store = MemoryStore::<LogId, Extensions>::new();
         let author_store = AuthorStore::new();
 
-        // TODO: add author whenever adding or joining a group
-        // author_store
-        //     .add_author(Self::chat_id(), private_key.public_key())
-        //     .await;
-
         // let relay_url = RELAY_ENDPOINT.parse()?;
 
-        let mut network_builder = NetworkBuilder::new(network_id.into())
+        let mut network_builder = NetworkBuilder::new(NETWORK_ID)
             .private_key(private_key.clone())
             .discovery(mdns)
             .gossip(GossipConfig {
@@ -101,8 +95,7 @@ impl Node {
         let network = network_builder.build().await.context("spawn p2p network")?;
         let chats = Arc::new(RwLock::new(HashMap::new()));
 
-        // TODO: subscribe to group when creating them and when loading the node
-        // let topic = config.topic.clone();
+        // TODO: locally store list of groups and initialize them when the node starts
 
         Ok(Self {
             op_store,
@@ -114,16 +107,33 @@ impl Node {
         })
     }
 
-    pub async fn create_group(&self) -> anyhow::Result<()> {
+    /// Create a new chat Space, and subscribe to the Topic for this chat.
+    pub async fn create_chat(&mut self) -> anyhow::Result<ChatNetwork> {
         let chat_id = ChatId::random();
         let chat = self.initialize_chat(chat_id).await?;
 
-        let (group, msg) = chat
+        let (_, msgs) = chat
             .manager
-            .create_group(&[(self.private_key.public_key().into(), Access::manage())])
+            .create_space(
+                chat_id,
+                &[(self.private_key.public_key().into(), Access::manage())],
+            )
             .await?;
 
-        Ok(())
+        for msg in msgs {
+            self.author_operation(&chat_id, Payload::Control(msg))
+                .await?;
+        }
+
+        Ok(chat)
+    }
+
+    /// "Approaching" a chat means subscribing to messages.
+    /// This needs to be accompanied by be added as a member of the chat Space by an existing member.
+    pub async fn enter_chat(&mut self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+        let chat = self.initialize_chat(chat_id).await?;
+
+        Ok(chat)
     }
 
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<String>> {
@@ -192,7 +202,7 @@ impl Node {
 
         let extensions = Extensions {
             log_id: log_id.clone(),
-            spaces_args: None,
+            control_message: None,
         };
 
         let mut header = Header {
