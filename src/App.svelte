@@ -1,5 +1,5 @@
 <script lang="ts">
-    // import { invoke } from "@tauri-apps/api/core";
+    import { invoke } from "@tauri-apps/api/core";
     import { onMount } from "svelte";
     import "./styles.css";
 
@@ -70,14 +70,24 @@
     }
 
     async function createGroup() {
-        if (newGroupName.trim()) {
+        const ok = true;
+        // const ok = newGroupName.trim();
+        if (ok) {
             try {
                 // This would call your backend to create a group
                 // For now, just close the dialog
                 showCreateGroup = false;
                 newGroupName = "";
+                if (
+                    await invoke("create_chat", {
+                        name: newGroupName,
+                    })
+                ) {
+                    showToastMessage("Group created successfully!");
+                } else {
+                    showToastMessage("Failed to create group", true);
+                }
                 await loadGroups(); // Reload groups after creation
-                showToastMessage("Group created successfully!");
             } catch (error) {
                 console.error("Failed to create group:", error);
                 showToastMessage("Failed to create group", true);
