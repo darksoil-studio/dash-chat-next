@@ -46,7 +46,9 @@ p2panda-stream = { git = "https://github.com/p2panda/p2panda.git", branch = "spa
 p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api", features = [
   "log-sync",
 ] }
-p2panda-spaces = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
+p2panda-spaces = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api", features = [
+  "test_utils",
+] }
 tokio = { version = "1.43.0", features = ["fs"] }
 hex = "0.4.3"
 

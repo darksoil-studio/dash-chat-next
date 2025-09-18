@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 
 pub type LogId = (ChatId, PublicKey);
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ChatId([u8; 32]);
 
 impl ChatId {

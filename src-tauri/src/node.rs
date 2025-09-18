@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use anyhow::{anyhow, Context, Result};
 use p2panda_core::{Body, Hash, Header, PrivateKey, PruneFlag, PublicKey};
 use p2panda_discovery::mdns::LocalDiscovery;
+use p2panda_encryption::Rng;
 use p2panda_net::config::GossipConfig;
 use p2panda_net::{FromNetwork, Network, NetworkBuilder, SyncConfiguration, ToNetwork, TopicId};
 use p2panda_store::{LogStore, MemoryStore, OperationStore};
@@ -20,7 +21,9 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tracing::{debug, error, warn};
 
 use crate::chat::{AuthorStore, ChatId, LogId};
+use crate::forge::DashForge;
 use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions};
+use crate::spaces::DashManager;
 
 // const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
@@ -52,6 +55,7 @@ pub struct Node {
 #[derive(Clone, Debug)]
 pub struct ChatNetwork {
     sender: mpsc::Sender<ToNetwork>,
+    manager: DashManager,
 }
 
 impl Node {
@@ -178,7 +182,22 @@ impl Node {
             });
         }
 
-        let chat_network = ChatNetwork { sender: network_tx };
+        let rng = Rng::default();
+
+        let spaces_store = crate::spaces::store::create_test_store(self.private_key.clone());
+        let forge = DashForge {
+            chat_id,
+            op_store: self.op_store.clone(),
+            gossip_tx: network_tx.clone(),
+            private_key: self.private_key.clone(),
+        };
+
+        let manager = DashManager::new(spaces_store, forge, rng).unwrap();
+
+        let chat_network = ChatNetwork {
+            sender: network_tx,
+            manager,
+        };
         self.chats.write().await.insert(chat_id, chat_network);
 
         Ok(())
