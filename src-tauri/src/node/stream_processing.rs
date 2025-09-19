@@ -84,7 +84,8 @@ impl Node {
                             .ok_or(anyhow!("Chat not found"))?
                             .manager
                             .process(&control_message)
-                            .await?;
+                            .await
+                            .expect("TODO ?");
                     }
 
                     let body_len = operation.body.as_ref().map_or(0, |body| body.size());

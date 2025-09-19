@@ -120,7 +120,8 @@ impl Node {
                 chat_id,
                 &[(self.private_key.public_key().into(), Access::manage())],
             )
-            .await?;
+            .await
+            .expect("TODO ?");
 
         for msg in msgs {
             self.author_operation(&chat_id, Payload::Control(msg))
@@ -140,11 +141,13 @@ impl Node {
             .ok_or(anyhow!("Chat not found"))?;
         chat.manager
             .space(chat_id)
-            .await?
+            .await
+            .expect("TODO ?")
             .unwrap()
             // TODO: we need an access level for only adding but not removing members
             .add(public_key.into(), Access::manage())
-            .await?;
+            .await
+            .expect("TODO ?");
 
         Ok(())
     }
@@ -162,10 +165,12 @@ impl Node {
         let members = chat
             .manager
             .space(chat_id)
-            .await?
+            .await
+            .expect("TODO ?")
             .unwrap()
             .members()
-            .await?;
+            .await
+            .expect("TODO ?");
 
         Ok(members)
     }
