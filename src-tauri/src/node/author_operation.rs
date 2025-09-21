@@ -28,6 +28,7 @@ impl Node {
         )
         .await?;
 
+        // Do gossip broadcast for newly created operations
         match topic {
             Topic::Chat(chat_id) => {
                 let chat_network = self
@@ -45,8 +46,21 @@ impl Node {
                     })
                     .await?;
             }
-            Topic::Inbox(_public_key) => {
-                todo!();
+            Topic::Inbox(public_key) => {
+                let friend = self.friends.read().await.get(&public_key).cloned();
+
+                if let Some(friend) = friend {
+                    friend
+                        .network_tx
+                        .send(ToNetwork::Message {
+                            bytes: encode_gossip_message(&header, body.as_ref())?,
+                        })
+                        .await?;
+                    println!("*** Friend found, gossiping invite: {}", public_key);
+                } else {
+                    println!("*** Friend not found, skipping gossip: {}", public_key);
+                    warn!("Friend not found, skipping gossip: {}", public_key);
+                }
             }
         }
 
@@ -63,14 +77,15 @@ async fn create_operation(
     let public_key = private_key.public_key();
     let log_id = topic.clone();
 
-    let (control_message, body) = match payload {
-        Payload::Message(message) => (None, Some(Body::new(message.as_bytes()))),
-        Payload::Control(spaces_args) => (Some(spaces_args), None),
+    let (data, body) = match payload {
+        Payload::ChatMessage(message) => (HeaderData::UseBody, Some(Body::new(message.as_bytes()))),
+        Payload::Invitation(invitation) => (HeaderData::Invitation(invitation.into()), None),
+        Payload::SpaceControl(spaces_args) => (HeaderData::SpaceControl(spaces_args.into()), None),
     };
 
     let extensions = Extensions {
         log_id: log_id.clone(),
-        control_message,
+        data,
     };
 
     // TODO: atomicity, see https://github.com/p2panda/p2panda/issues/798

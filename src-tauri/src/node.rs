@@ -10,6 +10,7 @@ use p2panda_auth::Access;
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
 use p2panda_core::{Body, Header, PrivateKey, PublicKey};
 use p2panda_discovery::mdns::LocalDiscovery;
+use p2panda_discovery::Discovery;
 use p2panda_encryption::Rng;
 use p2panda_net::config::GossipConfig;
 use p2panda_net::{FromNetwork, Network, NetworkBuilder, SyncConfiguration, ToNetwork};
@@ -24,14 +25,17 @@ use tracing::{debug, warn};
 
 use crate::chat::ChatId;
 use crate::forge::DashForge;
+use crate::friend::Friend;
 use crate::message::ChatMessage;
 use crate::network::{AuthorStore, LogId, Topic};
-use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions, Payload};
+use crate::operation::{
+    decode_gossip_message, encode_gossip_message, Extensions, HeaderData, InvitationMessage,
+    Payload,
+};
 use crate::spaces::{DashManager, SpacesStore};
 
-// const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
+const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
-const INBOX_NETWORK_ID: [u8; 32] = [77; 32];
 const CHAT_NETWORK_ID: [u8; 32] = [88; 32];
 
 const MAX_MESSAGE_SIZE: usize = 1000 * 10; // 10kb max. UDP payload size
@@ -55,7 +59,7 @@ pub struct Node {
     manager: DashManager,
     config: Config,
     private_key: PrivateKey,
-    friends: Arc<RwLock<HashMap<String, Member>>>,
+    friends: Arc<RwLock<HashMap<PublicKey, Friend>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -65,24 +69,52 @@ pub struct ChatNetwork {
 
 impl Node {
     pub async fn new(private_key: PrivateKey, config: Config) -> Result<Self> {
+        let public_key = private_key.public_key();
+
         let mdns = LocalDiscovery::new();
 
         let op_store = MemoryStore::<LogId, Extensions>::new();
-        let author_store = AuthorStore::new();
+        let mut author_store = AuthorStore::new();
 
-        // let relay_url = RELAY_ENDPOINT.parse()?;
+        author_store
+            .add_author(Topic::Inbox(public_key.clone()), public_key)
+            .await;
 
-        let mut network_builder = NetworkBuilder::new(CHAT_NETWORK_ID)
+        let relay_url = RELAY_ENDPOINT.parse()?;
+
+        let sync_protocol = LogSyncProtocol::new(author_store.clone(), op_store.clone());
+        let sync_config = SyncConfiguration::new(sync_protocol);
+
+        let mut new_peers = mdns.subscribe(CHAT_NETWORK_ID).unwrap();
+
+        {
+            let mut author_store = author_store.clone();
+            tokio::spawn(async move {
+                while let Some(Ok(peer)) = new_peers.next().await {
+                    let pubkey = PublicKey::from_bytes(peer.node_addr.node_id.as_bytes()).unwrap();
+                    if author_store
+                        .authors(&Topic::Inbox(pubkey.clone()))
+                        .await
+                        .map(|authors| authors.contains(&pubkey))
+                        .unwrap_or(false)
+                    {
+                        println!("*** new peer: {}", pubkey);
+                        author_store
+                            .add_author(Topic::Inbox(pubkey.clone()), pubkey)
+                            .await;
+                    }
+                }
+            });
+        }
+
+        let network_builder = NetworkBuilder::new(CHAT_NETWORK_ID)
             .private_key(private_key.clone())
             .discovery(mdns)
             .gossip(GossipConfig {
                 max_message_size: MAX_MESSAGE_SIZE,
-            });
-        // .relay(relay_url, false, 0);
-
-        let sync_protocol = LogSyncProtocol::new(author_store.clone(), op_store.clone());
-        let sync_config = SyncConfiguration::new(sync_protocol);
-        network_builder = network_builder.sync(sync_config);
+            })
+            .relay(relay_url, false, 0)
+            .sync(sync_config);
 
         // if config.bootstrap {
         //     network_builder = network_builder.bootstrap();
@@ -108,9 +140,7 @@ impl Node {
 
         let manager = DashManager::new(spaces_store.clone(), forge, rng).unwrap();
 
-        // TODO: locally store list of groups and initialize them when the node starts
-
-        Ok(Self {
+        let node = Self {
             op_store,
             author_store,
             spaces_store,
@@ -120,7 +150,13 @@ impl Node {
             config,
             private_key,
             friends: Arc::new(RwLock::new(HashMap::new())),
-        })
+        };
+
+        node.initialize_inbox(public_key).await?;
+
+        // TODO: locally store list of groups and initialize them when the node starts
+
+        Ok(node)
     }
 
     pub async fn me(&self) -> anyhow::Result<p2panda_spaces::member::Member> {
@@ -146,7 +182,7 @@ impl Node {
             .expect("TODO ?");
 
         for msg in msgs {
-            self.author_operation(chat_id.into(), Payload::Control(msg))
+            self.author_operation(chat_id.into(), Payload::SpaceControl(msg))
                 .await?;
         }
 
@@ -154,7 +190,8 @@ impl Node {
     }
 
     pub async fn add_member(&self, chat_id: ChatId, pubkey: PublicKey) -> anyhow::Result<()> {
-        self.manager
+        let ms = self
+            .manager
             .space(chat_id)
             .await
             .expect("TODO ?")
@@ -163,6 +200,17 @@ impl Node {
             .add(pubkey.into(), Access::manage())
             .await
             .expect("TODO ?");
+
+        self.author_operation(
+            pubkey.into(),
+            Payload::Invitation(InvitationMessage::JoinGroup(chat_id)),
+        )
+        .await?;
+
+        for msg in ms {
+            self.author_operation(chat_id.into(), Payload::SpaceControl(msg))
+                .await?;
+        }
 
         Ok(())
     }
@@ -259,7 +307,7 @@ impl Node {
 
         let extensions = Extensions {
             log_id: log_id.clone(),
-            control_message: None,
+            data: HeaderData::UseBody,
         };
 
         let mut header = Header {
@@ -301,8 +349,8 @@ impl Node {
     }
 
     // Friend management methods
-    pub async fn add_friend(&self, member: Member) -> anyhow::Result<String> {
-        let public_key = member.id().to_string();
+    pub async fn add_friend(&self, member: Member) -> anyhow::Result<PublicKey> {
+        let public_key = PublicKey::try_from(member.id()).expect("actor id is public key");
 
         // Register the member in the spaces manager
         self.manager
@@ -310,26 +358,36 @@ impl Node {
             .await
             .map_err(|e| anyhow!("Failed to register friend: {e:?}"))?;
 
+        let network_tx = self
+            .initialize_inbox(PublicKey::try_from(member.id()).expect("actor id is public key"))
+            .await?;
+
         // Store the friend
-        self.friends
-            .write()
-            .await
-            .insert(public_key.clone(), member);
+        self.friends.write().await.insert(
+            public_key.clone(),
+            Friend {
+                member: member.clone(),
+                network_tx,
+            },
+        );
+
+        self.author_operation(
+            public_key.clone().into(),
+            Payload::Invitation(InvitationMessage::Friend),
+        )
+        .await?;
 
         Ok(public_key)
     }
 
-    pub async fn get_friends(&self) -> anyhow::Result<Vec<String>> {
+    pub async fn get_friends(&self) -> anyhow::Result<Vec<PublicKey>> {
         let friends = self.friends.read().await;
         Ok(friends.keys().cloned().collect())
     }
 
-    pub async fn remove_friend(&self, public_key: String) -> anyhow::Result<()> {
+    pub async fn remove_friend(&self, public_key: PublicKey) -> anyhow::Result<()> {
+        // TODO: shutdown inbox task, etc.
         self.friends.write().await.remove(&public_key);
         Ok(())
-    }
-
-    pub async fn get_friend(&self, public_key: &str) -> Option<Member> {
-        self.friends.read().await.get(public_key).cloned()
     }
 }

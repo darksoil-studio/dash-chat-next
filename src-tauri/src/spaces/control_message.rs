@@ -43,8 +43,4 @@ impl SpaceControlMessage {
             spaces_args,
         })
     }
-
-    pub fn from_header(header: Header) -> Option<Self> {
-        header.extensions?.control_message
-    }
 }

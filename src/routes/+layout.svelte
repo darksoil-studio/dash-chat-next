@@ -8,18 +8,30 @@
         showToast,
         toastMessage,
         isErrorToast,
+        showToastMessage,
     } from "$lib/stores.js";
     import "../styles.css";
 
     // Load public key on mount
     onMount(async () => {
         console.log("Loading public key");
-        try {
-            const pubKey = await invoke("me");
-            myPublicKey.set(pubKey);
-            console.log("Public key loaded:", pubKey);
-        } catch (error) {
+        let tries = 10;
+        let error = null;
+        while (tries > 0) {
+            try {
+                const pubKey = await invoke("me");
+                myPublicKey.set(pubKey);
+                console.log("Public key loaded:", pubKey, "tries left:", tries);
+                break;
+            } catch (e) {
+                tries--;
+                error = e;
+                await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+        }
+        if (tries === 0) {
             console.error("Failed to load public key:", error);
+            showToastMessage("Failed to initialize app", true);
         }
     });
 

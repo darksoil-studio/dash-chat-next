@@ -1,8 +1,9 @@
 use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError, EncodeError};
 use p2panda_core::{Body, Extension, Hash, PruneFlag};
-use p2panda_spaces::OperationId;
+use p2panda_encryption::data_scheme::DirectMessage;
 use serde::{Deserialize, Serialize};
 
+use crate::chat::ChatId;
 use crate::network::LogId;
 use crate::spaces::SpaceControlMessage;
 
@@ -16,12 +17,27 @@ pub struct Extensions {
     //       due to the requirement of the Forge to not be concerned with log replication.
     // - the author field is redundant
     // - the hash could just be the hash of the header
-    pub control_message: Option<SpaceControlMessage>,
+    pub data: HeaderData,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum HeaderData {
+    SpaceControl(Box<SpaceControlMessage>),
+    Invitation(InvitationMessage),
+    UseBody,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum InvitationMessage {
+    /// Instructs the recipient to subscribe to the group chat topic.
+    JoinGroup(ChatId),
+    Friend,
 }
 
 pub enum Payload {
-    Message(String),
-    Control(SpaceControlMessage),
+    SpaceControl(SpaceControlMessage),
+    Invitation(InvitationMessage),
+    ChatMessage(String),
 }
 
 pub type Header = p2panda_core::Header<Extensions>;

@@ -1,12 +1,10 @@
-use std::str::FromStr;
-
 use node::Node;
 use p2panda_core::{PrivateKey, PublicKey};
+use p2panda_spaces::ActorId;
 use tauri::{Manager, State};
 use tauri_plugin_log::log::LevelFilter;
 
 use crate::{chat::ChatId, message::ChatMessage, spaces::MemberCode};
-use std::collections::HashMap;
 
 #[tauri::command]
 async fn me(node: State<'_, Node>) -> Result<MemberCode, String> {
@@ -17,10 +15,7 @@ async fn me(node: State<'_, Node>) -> Result<MemberCode, String> {
 #[tauri::command]
 async fn create_group(name: &str, node: State<'_, Node>) -> Result<ChatId, String> {
     match node.create_group().await {
-        Ok((chat_id, _)) => {
-            println!("[rust] created group, chat_id: {}", chat_id);
-            Ok(chat_id)
-        }
+        Ok((chat_id, _)) => Ok(chat_id),
         Err(err) => Err(format!("Error sending message: {err:?}")),
     }
 }
@@ -80,7 +75,7 @@ async fn get_messages(chat_id: ChatId, node: State<'_, Node>) -> Result<Vec<Chat
 #[tauri::command]
 async fn add_friend(friend_code: MemberCode, node: State<'_, Node>) -> Result<String, String> {
     match node.add_friend(friend_code.into()).await {
-        Ok(public_key) => Ok(public_key),
+        Ok(public_key) => Ok(public_key.to_string()),
         Err(err) => Err(format!("Error adding friend: {err:?}")),
     }
 }
@@ -88,13 +83,16 @@ async fn add_friend(friend_code: MemberCode, node: State<'_, Node>) -> Result<St
 #[tauri::command]
 async fn get_friends(node: State<'_, Node>) -> Result<Vec<String>, String> {
     match node.get_friends().await {
-        Ok(friends) => Ok(friends),
+        Ok(friends) => Ok(friends
+            .into_iter()
+            .map(|public_key| public_key.to_string())
+            .collect()),
         Err(err) => Err(format!("Error getting friends: {err:?}")),
     }
 }
 
 #[tauri::command]
-async fn remove_friend(public_key: String, node: State<'_, Node>) -> Result<(), String> {
+async fn remove_friend(public_key: PublicKey, node: State<'_, Node>) -> Result<(), String> {
     match node.remove_friend(public_key).await {
         Ok(_) => Ok(()),
         Err(err) => Err(format!("Error removing friend: {err:?}")),
@@ -103,6 +101,7 @@ async fn remove_friend(public_key: String, node: State<'_, Node>) -> Result<(), 
 
 mod chat;
 mod forge;
+mod friend;
 mod message;
 mod network;
 mod node;
@@ -133,6 +132,16 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let private_key = PrivateKey::new();
+
+                {
+                    let public_key = private_key.public_key();
+                    println!("*** public_key: {}", public_key);
+                    let actor_id: ActorId = public_key.into();
+                    println!("*** actor_id: {}", actor_id);
+                    let pk2 = PublicKey::try_from(actor_id).unwrap();
+                    println!("*** public_key == pk2: {}", public_key == pk2);
+                }
+
                 let node = Node::new(private_key, node::Config::default()).await;
 
                 match node {
@@ -140,6 +149,7 @@ pub fn run() {
                         handle.manage(node);
                     }
                     Err(err) => {
+                        println!("*** Error creating the node: {err:?}");
                         tracing::error!("Error creating the node: {err:?}");
                     }
                 }

@@ -114,7 +114,6 @@ impl From<MemberCode> for String {
 impl TryFrom<String> for MemberCode {
     type Error = anyhow::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        println!("decoding member code: {}", value);
         Ok(MemberCode::from_str(&value).unwrap())
     }
 }
