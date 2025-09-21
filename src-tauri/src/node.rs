@@ -7,13 +7,15 @@ use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
 use p2panda_auth::Access;
-use p2panda_core::cbor::{decode_cbor, encode_cbor};
-use p2panda_core::{Body, Header, PrivateKey, PublicKey};
+use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError};
+use p2panda_core::{Body, Header, Operation, PrivateKey, PublicKey};
 use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_discovery::Discovery;
 use p2panda_encryption::Rng;
 use p2panda_net::config::GossipConfig;
-use p2panda_net::{FromNetwork, Network, NetworkBuilder, SyncConfiguration, ToNetwork};
+use p2panda_net::{
+    FromNetwork, Network, NetworkBuilder, ResyncConfiguration, SyncConfiguration, ToNetwork,
+};
 use p2panda_spaces::member::Member;
 use p2panda_store::{LogStore, MemoryStore};
 use p2panda_stream::{DecodeExt, IngestExt};
@@ -28,6 +30,7 @@ use crate::forge::DashForge;
 use crate::friend::Friend;
 use crate::message::ChatMessage;
 use crate::network::{AuthorStore, LogId, Topic};
+use crate::node::author_operation::create_operation;
 use crate::operation::{
     decode_gossip_message, encode_gossip_message, Extensions, HeaderData, InvitationMessage,
     Payload,
@@ -36,7 +39,7 @@ use crate::spaces::{DashManager, SpacesStore};
 
 const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
-const CHAT_NETWORK_ID: [u8; 32] = [88; 32];
+const NETWORK_ID: [u8; 32] = [88; 32];
 
 const MAX_MESSAGE_SIZE: usize = 1000 * 10; // 10kb max. UDP payload size
 
@@ -76,6 +79,22 @@ impl Node {
         let op_store = MemoryStore::<LogId, Extensions>::new();
         let mut author_store = AuthorStore::new();
 
+        {
+            let op_store = op_store.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    for (pk, seq) in op_store
+                        .get_log_heights(&Topic::Inbox(public_key.clone()))
+                        .await
+                        .unwrap_or_default()
+                    {
+                        println!("*** log height: {pk} -> {seq}");
+                    }
+                }
+            });
+        }
+
         author_store
             .add_author(Topic::Inbox(public_key.clone()), public_key)
             .await;
@@ -83,9 +102,10 @@ impl Node {
         let relay_url = RELAY_ENDPOINT.parse()?;
 
         let sync_protocol = LogSyncProtocol::new(author_store.clone(), op_store.clone());
-        let sync_config = SyncConfiguration::new(sync_protocol);
+        let sync_config = SyncConfiguration::new(sync_protocol)
+            .resync(ResyncConfiguration::new().interval(10).poll_interval(1));
 
-        let mut new_peers = mdns.subscribe(CHAT_NETWORK_ID).unwrap();
+        let mut new_peers = mdns.subscribe(NETWORK_ID).unwrap();
 
         {
             let mut author_store = author_store.clone();
@@ -95,8 +115,8 @@ impl Node {
                     if author_store
                         .authors(&Topic::Inbox(pubkey.clone()))
                         .await
-                        .map(|authors| authors.contains(&pubkey))
-                        .unwrap_or(false)
+                        .map(|authors| !authors.contains(&pubkey))
+                        .unwrap_or(true)
                     {
                         println!("*** new peer: {}", pubkey);
                         author_store
@@ -104,10 +124,11 @@ impl Node {
                             .await;
                     }
                 }
+                println!("*** new peers stream ended");
             });
         }
 
-        let network_builder = NetworkBuilder::new(CHAT_NETWORK_ID)
+        let network_builder = NetworkBuilder::new(NETWORK_ID)
             .private_key(private_key.clone())
             .discovery(mdns)
             .gossip(GossipConfig {
@@ -154,6 +175,13 @@ impl Node {
 
         node.initialize_inbox(public_key).await?;
 
+        // TODO: remove, this is jsut a test
+        node.author_operation(
+            public_key.into(),
+            Payload::Invitation(InvitationMessage::Test),
+        )
+        .await?;
+
         // TODO: locally store list of groups and initialize them when the node starts
 
         Ok(node)
@@ -187,6 +215,11 @@ impl Node {
         }
 
         Ok((chat_id, chat))
+    }
+
+    pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
+        let groups = self.chats.read().await.keys().cloned().collect();
+        Ok(groups)
     }
 
     pub async fn add_member(&self, chat_id: ChatId, pubkey: PublicKey) -> anyhow::Result<()> {
@@ -243,8 +276,14 @@ impl Node {
 
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
         let Some(authors) = self.author_store.authors(&chat_id.into()).await else {
+            println!("*** get_messages: no authors found for {chat_id}");
             return Ok(vec![]);
         };
+
+        println!(
+            "*** get_messages: authors found for {chat_id}: {:?}",
+            authors
+        );
 
         let mut messages = vec![];
 
@@ -265,80 +304,30 @@ impl Node {
         let log = self.op_store.get_log(&public_key, &log_id, None).await?;
 
         let Some(log) = log else {
+            println!("*** get_messages_from: no log found for {public_key} in {chat_id}");
             return Ok(vec![]);
         };
 
+        println!("*** get_messages_from num messages: {}", log.len());
+
         let messages = log
             .into_iter()
-            .map(|(_h, body)| {
-                let Some(body) = body else {
-                    return Err(anyhow!("No body?"));
-                };
-
-                Ok(decode_cbor(body.to_bytes().as_slice())?)
+            .filter_map(|(_h, body)| {
+                if let Some(body) = body {
+                    Some(ChatMessage::from_bytes(body.to_bytes().as_slice()))
+                } else {
+                    None
+                }
             })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>, DecodeError>>()?;
 
         Ok(messages)
     }
 
     pub async fn send_message(&self, chat_id: ChatId, message: ChatMessage) -> anyhow::Result<()> {
-        let body = Body::new(&encode_cbor(&message)?);
-        let public_key = self.private_key.public_key();
+        let topic = chat_id.into();
 
-        let Some(chat_network) = self.chats.read().await.get(&chat_id).cloned() else {
-            return Err(anyhow!("Chat not found"));
-        };
-
-        let log_id = chat_id.into();
-
-        // TODO: this is not atomic, see https://github.com/p2panda/p2panda/issues/798
-        let latest_operation = self.op_store.latest_operation(&public_key, &log_id).await?;
-
-        let (seq_num, backlink) = match latest_operation {
-            Some((header, _)) => (header.seq_num + 1, Some(header.hash())),
-            None => (0, None),
-        };
-
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time from operation system")
-            .as_secs();
-
-        let extensions = Extensions {
-            log_id: log_id.clone(),
-            data: HeaderData::UseBody,
-        };
-
-        let mut header = Header {
-            version: 1,
-            public_key,
-            signature: None,
-            payload_size: body.size(),
-            payload_hash: Some(body.hash()),
-            timestamp,
-            seq_num,
-            backlink,
-            previous: vec![],
-            extensions: Some(extensions),
-        };
-        header.sign(&self.private_key);
-
-        p2panda_stream::operation::ingest_operation(
-            &mut self.op_store.clone(),
-            header.clone(),
-            Some(body.clone()),
-            header.to_bytes(),
-            &log_id,
-            false,
-        )
-        .await?;
-
-        chat_network
-            .sender
-            .send(ToNetwork::Message {
-                bytes: encode_gossip_message(&header, Some(&body))?,
-            })
+        self.author_operation(topic, Payload::ChatMessage(message.clone()))
             .await?;
 
         Ok(())
@@ -350,6 +339,7 @@ impl Node {
 
     // Friend management methods
     pub async fn add_friend(&self, member: Member) -> anyhow::Result<PublicKey> {
+        println!("*** adding friend: {:?}", member);
         let public_key = PublicKey::try_from(member.id()).expect("actor id is public key");
 
         // Register the member in the spaces manager

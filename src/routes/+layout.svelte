@@ -4,7 +4,7 @@
     import { onMount } from "svelte";
     import { invoke } from "@tauri-apps/api/core";
     import {
-        myPublicKey,
+        myPublicKey as myFriendCode,
         showToast,
         toastMessage,
         isErrorToast,
@@ -19,9 +19,14 @@
         let error = null;
         while (tries > 0) {
             try {
-                const pubKey = await invoke("me");
-                myPublicKey.set(pubKey);
-                console.log("Public key loaded:", pubKey, "tries left:", tries);
+                const friendCode = await invoke("me");
+                myFriendCode.set(friendCode);
+                console.log(
+                    "Friend code loaded:",
+                    friendCode,
+                    "tries left:",
+                    tries,
+                );
                 break;
             } catch (e) {
                 tries--;
@@ -30,7 +35,7 @@
             }
         }
         if (tries === 0) {
-            console.error("Failed to load public key:", error);
+            console.error("Failed to load friend code:", error);
             showToastMessage("Failed to initialize app", true);
         }
     });
@@ -41,6 +46,19 @@
 
     function isActive(path: string): boolean {
         return $page.url.pathname === path;
+    }
+
+    async function copyMyFriendCode() {
+        try {
+            if (!$myFriendCode) {
+                throw new Error("Pubkey not set");
+            }
+            await navigator.clipboard.writeText($myFriendCode);
+            showToastMessage("Public key copied to clipboard!");
+        } catch (error) {
+            console.error("Failed to copy public key:", error);
+            showToastMessage("Failed to copy public key", true);
+        }
     }
 </script>
 
@@ -61,6 +79,12 @@
                     on:click={() => navigateTo("/friends")}
                 >
                     Friends
+                </button>
+                <button
+                    class="nav-link btn-outline"
+                    on:click={copyMyFriendCode}
+                >
+                    Copy Friend Code
                 </button>
             </div>
         </div>
@@ -147,6 +171,17 @@
         background: var(--accent-color);
         color: white;
         border-color: var(--accent-color);
+    }
+
+    .btn-outline {
+        background: transparent;
+        border-color: #646cff;
+        color: #646cff;
+    }
+
+    .btn-outline:hover {
+        background: #646cff;
+        color: white;
     }
 
     .main-content {

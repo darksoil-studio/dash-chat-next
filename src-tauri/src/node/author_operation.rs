@@ -16,7 +16,13 @@ impl Node {
             header,
             body,
             hash: _,
-        } = create_operation(&self.op_store, &self.private_key, topic.clone(), payload).await?;
+        } = create_operation(
+            &self.op_store,
+            &self.private_key,
+            topic.clone(),
+            payload.clone(),
+        )
+        .await?;
 
         p2panda_stream::operation::ingest_operation(
             &mut self.op_store.clone(),
@@ -27,6 +33,20 @@ impl Node {
             false,
         )
         .await?;
+
+        {
+            let latest = self
+                .op_store
+                .latest_operation(&self.private_key.public_key(), &topic)
+                .await?;
+
+            println!("*** latest operation: {:?}", latest);
+        }
+
+        println!(
+            "*** author operation ingested for topic: {:?} payload: {:?}",
+            topic, payload,
+        );
 
         // Do gossip broadcast for newly created operations
         match topic {
@@ -68,7 +88,7 @@ impl Node {
     }
 }
 
-async fn create_operation(
+pub(crate) async fn create_operation(
     store: &OpStore,
     private_key: &PrivateKey,
     topic: Topic,
@@ -78,7 +98,10 @@ async fn create_operation(
     let log_id = topic.clone();
 
     let (data, body) = match payload {
-        Payload::ChatMessage(message) => (HeaderData::UseBody, Some(Body::new(message.as_bytes()))),
+        Payload::ChatMessage(message) => (
+            HeaderData::UseBody,
+            Some(Body::new(message.as_bytes().as_slice())),
+        ),
         Payload::Invitation(invitation) => (HeaderData::Invitation(invitation.into()), None),
         Payload::SpaceControl(spaces_args) => (HeaderData::SpaceControl(spaces_args.into()), None),
     };

@@ -22,17 +22,18 @@
     let selectedFriends = $state<Set<string>>(new Set());
 
     let membersInterval: any;
+    let messagesInterval: any;
 
     // Chat functions
     async function loadMessages() {
         try {
-            console.log("trying to get_messages for", chatId);
             let msgs: ChatMessage[] = await invoke("get_messages", {
                 chatId: chatId,
             });
 
             msgs.sort((a, b) => a.timestamp - b.timestamp);
             messages.set(msgs);
+            console.log("messages loaded: ", msgs);
         } catch (error) {
             console.error("Failed to load messages:", error);
         }
@@ -62,16 +63,12 @@
         console.log("sendMessage", newMessage, chatId);
         if (newMessage.trim()) {
             try {
-                const message: ChatMessage = {
-                    content: newMessage.trim(),
-                    author: $myPublicKey, // Current user's key
-                    timestamp: Date.now(),
-                };
-
-                await invoke("send_message", {
+                const message: ChatMessage = await invoke("send_message", {
                     chatId: chatId,
-                    message,
+                    message: newMessage.trim(),
                 });
+
+                console.log("message sent: ", message);
 
                 messages.update((current) => [...current, message]);
                 newMessage = "";
@@ -103,6 +100,9 @@
     }
 
     function formatTimestamp(timestamp: number): string {
+        if (timestamp === undefined) {
+            return "???";
+        }
         return new Date(timestamp).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -148,12 +148,16 @@
     }
 
     onMount(async () => {
-        await loadMessages();
         await loadParticipants();
+        await loadMessages();
 
         // Set up interval for polling members
         membersInterval = setInterval(async () => {
             await loadParticipants();
+        }, 3000);
+
+        messagesInterval = setInterval(async () => {
+            await loadMessages();
         }, 3000);
     });
 
@@ -444,6 +448,7 @@
         padding: 1rem 2rem;
         border-top: 1px solid var(--border-color);
         background: var(--bg-color);
+        min-height: 120px;
     }
 
     .message-input-container form {

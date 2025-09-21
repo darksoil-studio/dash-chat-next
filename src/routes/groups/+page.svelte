@@ -3,7 +3,7 @@
     import { onDestroy, onMount } from "svelte";
     import { goto } from "$app/navigation";
     import { groups, myPublicKey, showToastMessage } from "../../lib/stores.js";
-    import type { Group } from "../../lib/types.js";
+    import type { ChatId, ChatOverview } from "../../lib/types.js";
 
     // Local state
     let newGroupName = $state("");
@@ -16,17 +16,9 @@
     // Group management functions
     async function loadGroups() {
         try {
-            for (const group of $groups) {
-                try {
-                    const members: string[] = await invoke("get_members", {
-                        chatId: group.id,
-                    });
-                    group.memberCount = members.length;
-                } catch (error) {
-                    console.error("Failed to load members:", error);
-                    group.memberCount = -1;
-                }
-            }
+            const overviews: ChatOverview[] = await invoke("get_groups");
+            console.log("groups loaded: ", overviews);
+            groups.set(overviews);
         } catch (error) {
             console.error("Failed to load groups:", error);
         }
@@ -42,8 +34,8 @@
 
                 console.log("[ts] created group, chatId: {}", chatId);
 
-                const newGroup: Group = {
-                    id: chatId,
+                const newGroup: ChatOverview = {
+                    chatId: chatId,
                     name: newGroupName,
                     memberCount: 1,
                 };
@@ -88,21 +80,8 @@
         }
     }
 
-    async function copyMyPublicKey() {
-        try {
-            if (!$myPublicKey) {
-                throw new Error("Pubkey not set");
-            }
-            await navigator.clipboard.writeText($myPublicKey);
-            showToastMessage("Public key copied to clipboard!");
-        } catch (error) {
-            console.error("Failed to copy public key:", error);
-            showToastMessage("Failed to copy public key", true);
-        }
-    }
-
-    function openChat(group: Group) {
-        goto(`/chat/${group.id}`);
+    function openChat(group: ChatOverview) {
+        goto(`/chat/${group.chatId}`);
     }
 
     onMount(async () => {
@@ -139,9 +118,6 @@
             >
                 Join Group
             </button>
-            <button class="btn btn-outline" on:click={copyMyPublicKey}>
-                Copy Pubkey
-            </button>
         </div>
     </header>
 
@@ -151,7 +127,7 @@
                 <p>No groups yet. Create one or join an existing group!</p>
             </div>
         {:else}
-            {#each $groups as group (group.id)}
+            {#each $groups as group (group.chatId)}
                 <div
                     class="group-card"
                     role="button"
@@ -169,7 +145,8 @@
                     </div>
                     <button
                         class="btn btn-small btn-outline"
-                        on:click|stopPropagation={() => copyJoinCode(group.id)}
+                        on:click|stopPropagation={() =>
+                            copyJoinCode(group.chatId)}
                     >
                         Copy Join Code
                     </button>

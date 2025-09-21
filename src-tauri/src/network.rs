@@ -32,17 +32,17 @@ impl TopicId for Topic {
 pub type LogId = Topic;
 
 #[derive(Clone, Debug)]
-pub struct AuthorStore<T>(Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
+pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
 
 impl<T: Eq + std::hash::Hash> AuthorStore<T> {
     pub fn new() -> Self {
         Self(Arc::new(RwLock::new(HashMap::new())))
     }
 
-    pub async fn add_author(&mut self, chat: T, public_key: PublicKey) {
+    pub async fn add_author(&self, topic: T, public_key: PublicKey) {
         let mut authors = self.0.write().await;
         authors
-            .entry(chat)
+            .entry(topic)
             .and_modify(|public_keys| {
                 public_keys.insert(public_key);
             })
@@ -53,9 +53,9 @@ impl<T: Eq + std::hash::Hash> AuthorStore<T> {
             });
     }
 
-    pub async fn authors(&self, chat: &T) -> Option<HashSet<PublicKey>> {
+    pub async fn authors(&self, topic: &T) -> Option<HashSet<PublicKey>> {
         let authors = self.0.read().await;
-        authors.get(chat).cloned()
+        authors.get(topic).cloned()
     }
 }
 

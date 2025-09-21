@@ -1,7 +1,7 @@
 // Shared types for the p2p chat app
 
-export interface Group {
-    id: ChatId;
+export interface ChatOverview {
+    chatId: ChatId;
     name: string;
     memberCount: number;
 }

@@ -10,11 +10,23 @@ impl Node {
         &self,
         pubkey: PublicKey,
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<ToNetwork>> {
+        if let Some(friend) = self.friends.read().await.get(&pubkey) {
+            return Ok(friend.network_tx.clone());
+        }
+
         let network_tx = self.initialize_topic(pubkey.into()).await?;
         Ok(network_tx)
     }
 
     pub(super) async fn initialize_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+        if let Some(chat_network) = self.chats.read().await.get(&chat_id) {
+            return Ok(chat_network.clone());
+        }
+
+        self.author_store
+            .add_author(chat_id.into(), self.public_key())
+            .await;
+
         let network_tx = self.initialize_topic(chat_id.into()).await?;
 
         let chat_network = ChatNetwork { sender: network_tx };
@@ -44,6 +56,7 @@ impl Node {
             FromNetwork::GossipMessage { bytes, .. } => match decode_gossip_message(&bytes) {
                 Ok(result) => Some(result),
                 Err(err) => {
+                    println!("*** decode gossip message error: {err}");
                     warn!("could not decode gossip message: {err}");
                     None
                 }
@@ -59,6 +72,7 @@ impl Node {
             .filter_map(|result| match result {
                 Ok(operation) => Some(operation),
                 Err(err) => {
+                    println!("*** decode operation error: {err}");
                     warn!("decode operation error: {err}");
                     None
                 }
@@ -67,6 +81,7 @@ impl Node {
             .filter_map(|result| match result {
                 Ok(operation) => Some(operation),
                 Err(err) => {
+                    println!("*** ingest operation error: {err}");
                     warn!("ingest operation error: {err}");
                     None
                 }
@@ -87,6 +102,7 @@ impl Node {
         let node = self.clone();
         let mut stream = Box::pin(stream);
         task::spawn(async move {
+            println!("*** stream process loop started for topic: {:?}", topic);
             while let Some(operation) = stream.next().await {
                 // let log_id: Option<LogId> = operation.header.extension();
 
@@ -96,12 +112,18 @@ impl Node {
                     .add_author(topic.clone(), header.public_key)
                     .await;
 
+                println!("*** adding author for topic {:?}", topic);
+
                 let Some(extensions) = header.extensions else {
+                    println!("*** no extensions");
                     warn!("no extensions");
                     continue;
                 };
 
-                println!("*** received operation: {:?}", extensions.data);
+                println!(
+                    "*** RECEIVED OPERATION -- topic {topic:?} -- operation: {:?}",
+                    extensions.data
+                );
 
                 match extensions.data {
                     HeaderData::SpaceControl(control_message) => {
@@ -131,6 +153,9 @@ impl Node {
                                     header.public_key
                                 );
                             }
+                            InvitationMessage::Test => {
+                                println!("*** received test message from: {:?}", header.public_key);
+                            }
                         }
                     }
                     HeaderData::UseBody => {}
@@ -144,6 +169,7 @@ impl Node {
                     "received operation"
                 );
             }
+            println!("*** ingestion stream ended");
             anyhow::Ok(())
         });
     }

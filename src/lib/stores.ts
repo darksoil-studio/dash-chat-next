@@ -1,13 +1,13 @@
 import { writable } from 'svelte/store';
-import type { Group, Friend, ChatMessage, Participant } from './types.js';
+import type { ChatOverview, Friend, ChatMessage, Participant } from './types.js';
 
 // Global state stores
-export const groups = writable<Group[]>([]);
+export const groups = writable<ChatOverview[]>([]);
 export const friends = writable<Friend[]>([]);
 export const messages = writable<ChatMessage[]>([]);
 export const participants = writable<Map<string, Participant>>(new Map());
 export const myPublicKey = writable<string>("");
-export const selectedGroup = writable<Group | null>(null);
+export const selectedGroup = writable<ChatOverview | null>(null);
 
 // UI state
 export const toastMessage = writable<string>("");

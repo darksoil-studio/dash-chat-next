@@ -4,6 +4,7 @@ use p2panda_encryption::data_scheme::DirectMessage;
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;
+use crate::message::ChatMessage;
 use crate::network::LogId;
 use crate::spaces::SpaceControlMessage;
 
@@ -32,12 +33,14 @@ pub enum InvitationMessage {
     /// Instructs the recipient to subscribe to the group chat topic.
     JoinGroup(ChatId),
     Friend,
+    Test,
 }
 
+#[derive(Clone, Debug)]
 pub enum Payload {
     SpaceControl(SpaceControlMessage),
     Invitation(InvitationMessage),
-    ChatMessage(String),
+    ChatMessage(ChatMessage),
 }
 
 pub type Header = p2panda_core::Header<Extensions>;
