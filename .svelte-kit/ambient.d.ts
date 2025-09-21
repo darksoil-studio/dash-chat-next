@@ -118,9 +118,6 @@ declare module '$env/static/private' {
 	export const XMODIFIERS: string;
 	export const ZSH: string;
 	export const _: string;
-	export const LOG_DST: string;
-	export const LOG_LEVEL: string;
-	export const VSCODE_L10N_BUNDLE_LOCATION: string;
 	export const ELECTRON_NO_ASAR: string;
 	export const NODE_ENV: string;
 }
@@ -244,9 +241,6 @@ declare module '$env/dynamic/private' {
 		XMODIFIERS: string;
 		ZSH: string;
 		_: string;
-		LOG_DST: string;
-		LOG_LEVEL: string;
-		VSCODE_L10N_BUNDLE_LOCATION: string;
 		ELECTRON_NO_ASAR: string;
 		NODE_ENV: string;
 		[key: `PUBLIC_${string}`]: undefined;

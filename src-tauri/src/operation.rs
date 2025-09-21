@@ -3,7 +3,7 @@ use p2panda_core::{Body, Extension, Hash, PruneFlag};
 use p2panda_spaces::OperationId;
 use serde::{Deserialize, Serialize};
 
-use crate::chat::{ChatId, LogId};
+use crate::network::LogId;
 use crate::spaces::SpaceControlMessage;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

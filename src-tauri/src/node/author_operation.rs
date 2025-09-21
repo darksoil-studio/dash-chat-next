@@ -9,39 +9,46 @@ pub type OpStore = p2panda_store::MemoryStore<LogId, Extensions>;
 impl Node {
     pub(super) async fn author_operation(
         &self,
-        chat_id: &ChatId,
+        topic: Topic,
         payload: Payload,
     ) -> Result<(), anyhow::Error> {
         let Operation {
             header,
             body,
             hash: _,
-        } = create_operation(&self.op_store, &self.private_key, chat_id, payload).await?;
+        } = create_operation(&self.op_store, &self.private_key, topic.clone(), payload).await?;
 
         p2panda_stream::operation::ingest_operation(
             &mut self.op_store.clone(),
             header.clone(),
             body.clone(),
             header.to_bytes(),
-            &(*chat_id, self.private_key.public_key()),
+            &(topic.clone(), self.private_key.public_key()),
             false,
         )
         .await?;
 
-        let chat_network = self
-            .chats
-            .read()
-            .await
-            .get(chat_id)
-            .cloned()
-            .ok_or(anyhow!("Chat not found"))?;
+        match topic {
+            Topic::Chat(chat_id) => {
+                let chat_network = self
+                    .chats
+                    .read()
+                    .await
+                    .get(&chat_id)
+                    .cloned()
+                    .ok_or(anyhow!("Chat not found"))?;
 
-        chat_network
-            .sender
-            .send(ToNetwork::Message {
-                bytes: encode_gossip_message(&header, body.as_ref())?,
-            })
-            .await?;
+                chat_network
+                    .sender
+                    .send(ToNetwork::Message {
+                        bytes: encode_gossip_message(&header, body.as_ref())?,
+                    })
+                    .await?;
+            }
+            Topic::Inbox(_public_key) => {
+                todo!();
+            }
+        }
 
         Ok(())
     }
@@ -50,11 +57,11 @@ impl Node {
 async fn create_operation(
     store: &OpStore,
     private_key: &PrivateKey,
-    chat_id: &ChatId,
+    topic: Topic,
     payload: Payload,
 ) -> Result<Operation<Extensions>, anyhow::Error> {
     let public_key = private_key.public_key();
-    let log_id = (chat_id.clone(), public_key);
+    let log_id = (topic, public_key);
 
     let (control_message, body) = match payload {
         Payload::Message(message) => (None, Some(Body::new(message.as_bytes()))),

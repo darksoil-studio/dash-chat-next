@@ -3,21 +3,35 @@ use crate::spaces::{SpaceControlMessage, SpacesArgs};
 use super::*;
 
 impl Node {
+    pub(super) async fn initialize_inbox(&self) -> anyhow::Result<()> {
+        let _network_tx = self.initialize_topic(self.public_key().into()).await?;
+
+        Ok(())
+    }
+
+    pub(super) async fn initialize_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+        let network_tx = self.initialize_topic(chat_id.into()).await?;
+
+        let chat_network = ChatNetwork { sender: network_tx };
+        self.chats
+            .write()
+            .await
+            .insert(chat_id, chat_network.clone());
+
+        Ok(chat_network)
+    }
+
     /// Internal function to start the necessary tasks for processing group chat
     /// network activity.
     ///
     /// This must be called:
     /// - when created a new group chat
     /// - when initializing the node, for each existing group chat
-    pub(super) async fn initialize_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
-        let (network_tx, network_rx, gossip_ready) =
-            self.network.subscribe(chat_id.clone()).await?;
-
-        task::spawn(async move {
-            if gossip_ready.await.is_ok() {
-                debug!("joined gossip overlay");
-            }
-        });
+    pub(super) async fn initialize_topic(
+        &self,
+        topic: Topic,
+    ) -> anyhow::Result<mpsc::Sender<ToNetwork>> {
+        let (network_tx, network_rx, _gossip_ready) = self.network.subscribe(topic.clone()).await?;
 
         let stream = ReceiverStream::new(network_rx);
         let stream = stream.filter_map(|event| match event {
@@ -55,7 +69,7 @@ impl Node {
         {
             let mut author_store = self.author_store.clone();
 
-            let topic = chat_id.clone();
+            let topic: Topic = topic.into();
             let manager = self.manager.clone();
             task::spawn(async move {
                 while let Some(operation) = stream.next().await {
@@ -92,12 +106,6 @@ impl Node {
             });
         }
 
-        let chat_network = ChatNetwork { sender: network_tx };
-        self.chats
-            .write()
-            .await
-            .insert(chat_id, chat_network.clone());
-
-        Ok(chat_network)
+        Ok(network_tx)
     }
 }

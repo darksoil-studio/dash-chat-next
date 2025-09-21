@@ -2,36 +2,32 @@ mod author_operation;
 mod stream_processing;
 
 use std::collections::HashMap;
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Result};
 use p2panda_auth::Access;
 use p2panda_core::cbor::{decode_cbor, encode_cbor};
-use p2panda_core::{Body, Hash, Header, PrivateKey, PruneFlag, PublicKey};
+use p2panda_core::{Body, Header, PrivateKey, PublicKey};
 use p2panda_discovery::mdns::LocalDiscovery;
-use p2panda_discovery::Discovery;
 use p2panda_encryption::Rng;
 use p2panda_net::config::GossipConfig;
-use p2panda_net::{FromNetwork, Network, NetworkBuilder, SyncConfiguration, ToNetwork, TopicId};
+use p2panda_net::{FromNetwork, Network, NetworkBuilder, SyncConfiguration, ToNetwork};
 use p2panda_spaces::member::Member;
-use p2panda_store::{LogStore, MemoryStore, OperationStore};
-use p2panda_stream::operation::{ingest_operation, IngestResult};
+use p2panda_store::{LogStore, MemoryStore};
 use p2panda_stream::{DecodeExt, IngestExt};
 use p2panda_sync::log_sync::LogSyncProtocol;
-use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio::task;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
-use crate::chat::{AuthorStore, ChatId, LogId};
+use crate::chat::ChatId;
 use crate::forge::DashForge;
 use crate::message::ChatMessage;
+use crate::network::{AuthorStore, LogId, Topic};
 use crate::operation::{decode_gossip_message, encode_gossip_message, Extensions, Payload};
-use crate::spaces::{DashGroup, DashManager, DashSpace, SharedSpaceStore, SpacesStore};
+use crate::spaces::{DashManager, SpacesStore};
 
 // const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
@@ -53,7 +49,7 @@ impl Default for Config {
 #[derive(Clone, Debug)]
 pub struct Node {
     op_store: MemoryStore<LogId, Extensions>,
-    network: Network<ChatId>,
+    network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, ChatNetwork>>>,
     author_store: AuthorStore,
     spaces_store: SpacesStore,
@@ -151,7 +147,7 @@ impl Node {
             .expect("TODO ?");
 
         for msg in msgs {
-            self.author_operation(&chat_id, Payload::Control(msg))
+            self.author_operation(chat_id.into(), Payload::Control(msg))
                 .await?;
         }
 
@@ -199,7 +195,7 @@ impl Node {
     }
 
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
-        let Some(authors) = self.author_store.authors(&chat_id).await else {
+        let Some(authors) = self.author_store.authors(&chat_id.into()).await else {
             return Ok(vec![]);
         };
 
@@ -218,7 +214,7 @@ impl Node {
         chat_id: ChatId,
         public_key: PublicKey,
     ) -> anyhow::Result<Vec<ChatMessage>> {
-        let log_id = (chat_id, public_key);
+        let log_id = (chat_id.into(), public_key);
         let log = self.op_store.get_log(&public_key, &log_id, None).await?;
 
         let Some(log) = log else {
@@ -247,7 +243,7 @@ impl Node {
             return Err(anyhow!("Chat not found"));
         };
 
-        let log_id = (chat_id, public_key);
+        let log_id = (chat_id.into(), public_key);
 
         // TODO: this is not atomic, see https://github.com/p2panda/p2panda/issues/798
         let latest_operation = self.op_store.latest_operation(&public_key, &log_id).await?;

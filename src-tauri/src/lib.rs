@@ -104,6 +104,7 @@ async fn remove_friend(public_key: String, node: State<'_, Node>) -> Result<(), 
 mod chat;
 mod forge;
 mod message;
+mod network;
 mod node;
 mod operation;
 pub mod spaces;
