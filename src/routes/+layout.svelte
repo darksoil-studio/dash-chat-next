@@ -36,7 +36,7 @@
     <!-- Navigation Bar -->
     <nav class="nav-bar">
         <div class="nav-content">
-            <h1 class="nav-title">p2pandash chat</h1>
+            <h1 class="nav-title">p2pandashchat!</h1>
             <div class="nav-links">
                 <button
                     class="nav-link {isActive('/groups') ? 'active' : ''}"

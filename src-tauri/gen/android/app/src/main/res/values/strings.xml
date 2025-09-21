@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">p2panda-tauri-chat</string>
-    <string name="main_activity_title">p2panda-tauri-chat</string>
+    <string name="app_name">p2pandashchat</string>
+    <string name="main_activity_title">p2pandashchat</string>
 </resources>

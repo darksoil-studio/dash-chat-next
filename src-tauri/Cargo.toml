@@ -1,5 +1,5 @@
 [package]
-name = "p2panda-tauri-chat"
+name = "p2pandashchat"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
