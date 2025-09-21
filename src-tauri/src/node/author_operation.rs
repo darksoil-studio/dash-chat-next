@@ -23,7 +23,7 @@ impl Node {
             header.clone(),
             body.clone(),
             header.to_bytes(),
-            &(topic.clone(), self.private_key.public_key()),
+            &topic,
             false,
         )
         .await?;
@@ -61,7 +61,7 @@ async fn create_operation(
     payload: Payload,
 ) -> Result<Operation<Extensions>, anyhow::Error> {
     let public_key = private_key.public_key();
-    let log_id = (topic, public_key);
+    let log_id = topic.clone();
 
     let (control_message, body) = match payload {
         Payload::Message(message) => (None, Some(Body::new(message.as_bytes()))),

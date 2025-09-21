@@ -31,9 +31,8 @@ use crate::spaces::{DashManager, SpacesStore};
 
 // const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
-const NETWORK_ID: [u8; 32] = [88; 32];
-
-const DEFAULT_TOPIC: &str = "peers-for-peers";
+const INBOX_NETWORK_ID: [u8; 32] = [77; 32];
+const CHAT_NETWORK_ID: [u8; 32] = [88; 32];
 
 const MAX_MESSAGE_SIZE: usize = 1000 * 10; // 10kb max. UDP payload size
 
@@ -51,7 +50,7 @@ pub struct Node {
     op_store: MemoryStore<LogId, Extensions>,
     network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, ChatNetwork>>>,
-    author_store: AuthorStore,
+    author_store: AuthorStore<Topic>,
     spaces_store: SpacesStore,
     manager: DashManager,
     config: Config,
@@ -73,7 +72,7 @@ impl Node {
 
         // let relay_url = RELAY_ENDPOINT.parse()?;
 
-        let mut network_builder = NetworkBuilder::new(NETWORK_ID)
+        let mut network_builder = NetworkBuilder::new(CHAT_NETWORK_ID)
             .private_key(private_key.clone())
             .discovery(mdns)
             .gossip(GossipConfig {
@@ -214,7 +213,7 @@ impl Node {
         chat_id: ChatId,
         public_key: PublicKey,
     ) -> anyhow::Result<Vec<ChatMessage>> {
-        let log_id = (chat_id.into(), public_key);
+        let log_id = chat_id.into();
         let log = self.op_store.get_log(&public_key, &log_id, None).await?;
 
         let Some(log) = log else {
@@ -243,7 +242,7 @@ impl Node {
             return Err(anyhow!("Chat not found"));
         };
 
-        let log_id = (chat_id.into(), public_key);
+        let log_id = chat_id.into();
 
         // TODO: this is not atomic, see https://github.com/p2panda/p2panda/issues/798
         let latest_operation = self.op_store.latest_operation(&public_key, &log_id).await?;

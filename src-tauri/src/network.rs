@@ -29,17 +29,17 @@ impl TopicId for Topic {
     }
 }
 
-pub type LogId = (Topic, PublicKey);
+pub type LogId = Topic;
 
 #[derive(Clone, Debug)]
-pub struct AuthorStore(Arc<RwLock<HashMap<Topic, HashSet<PublicKey>>>>);
+pub struct AuthorStore<T>(Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
 
-impl AuthorStore {
+impl<T: Eq + std::hash::Hash> AuthorStore<T> {
     pub fn new() -> Self {
         Self(Arc::new(RwLock::new(HashMap::new())))
     }
 
-    pub async fn add_author(&mut self, chat: Topic, public_key: PublicKey) {
+    pub async fn add_author(&mut self, chat: T, public_key: PublicKey) {
         let mut authors = self.0.write().await;
         authors
             .entry(chat)
@@ -53,25 +53,25 @@ impl AuthorStore {
             });
     }
 
-    pub async fn authors(&self, chat: &Topic) -> Option<HashSet<PublicKey>> {
+    pub async fn authors(&self, chat: &T) -> Option<HashSet<PublicKey>> {
         let authors = self.0.read().await;
         authors.get(chat).cloned()
     }
 }
 
 #[async_trait]
-impl TopicLogMap<Topic, LogId> for AuthorStore {
+impl<Topic: Eq + std::hash::Hash + TopicQuery> TopicLogMap<Topic, Topic> for AuthorStore<Topic> {
     /// During sync other peers are interested in all our append-only logs for a certain topic.
     /// This method tells the sync protocol which logs we have available from which author for that
     /// given topic.
-    async fn get(&self, chat: &Topic) -> Option<HashMap<PublicKey, Vec<LogId>>> {
-        let authors = self.authors(chat).await;
+    async fn get(&self, topic: &Topic) -> Option<HashMap<PublicKey, Vec<Topic>>> {
+        let authors = self.authors(topic).await;
         let map = match authors {
             Some(authors) => {
                 let mut map = HashMap::with_capacity(authors.len());
                 for author in authors {
                     // We write all data of one author into one log for now.
-                    map.insert(author, vec![(chat.clone(), author)]);
+                    map.insert(author, vec![topic.clone()]);
                 }
                 map
             }

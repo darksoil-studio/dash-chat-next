@@ -2,15 +2,9 @@ use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
     str::FromStr,
-    sync::Arc,
 };
 
-use async_trait::async_trait;
-use p2panda_core::{Hash, PublicKey};
-use p2panda_net::TopicId;
-use p2panda_sync::{log_sync::TopicLogMap, TopicQuery};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, derive_more::Deref)]
 #[serde(into = "String", try_from = "String")]
