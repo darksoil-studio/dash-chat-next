@@ -5,11 +5,13 @@ use p2panda_core::{PrivateKey, PublicKey};
 use tauri::{Manager, State};
 use tauri_plugin_log::log::LevelFilter;
 
-use crate::{chat::ChatId, message::ChatMessage};
+use crate::{chat::ChatId, message::ChatMessage, spaces::MemberCode};
+use std::collections::HashMap;
 
 #[tauri::command]
-async fn me(node: State<'_, Node>) -> Result<String, String> {
-    Ok(node.public_key().to_string())
+async fn me(node: State<'_, Node>) -> Result<MemberCode, String> {
+    let member = node.me().await.map_err(|e| e.to_string())?;
+    Ok(member.into())
 }
 
 #[tauri::command]
@@ -33,10 +35,10 @@ async fn join_group(chat_id: ChatId, node: State<'_, Node>) -> Result<(), String
 #[tauri::command]
 async fn add_member(
     chat_id: ChatId,
-    public_key: PublicKey,
+    pubkey: PublicKey,
     node: State<'_, Node>,
 ) -> Result<(), String> {
-    match node.add_member(chat_id, public_key).await {
+    match node.add_member(chat_id, pubkey).await {
         Ok(_) => Ok(()),
         Err(err) => Err(format!("Error adding member: {err:?}")),
     }
@@ -74,6 +76,31 @@ async fn get_messages(chat_id: ChatId, node: State<'_, Node>) -> Result<Vec<Chat
     }
 }
 
+// Friend management commands
+#[tauri::command]
+async fn add_friend(friend_code: MemberCode, node: State<'_, Node>) -> Result<String, String> {
+    match node.add_friend(friend_code.into()).await {
+        Ok(public_key) => Ok(public_key),
+        Err(err) => Err(format!("Error adding friend: {err:?}")),
+    }
+}
+
+#[tauri::command]
+async fn get_friends(node: State<'_, Node>) -> Result<Vec<String>, String> {
+    match node.get_friends().await {
+        Ok(friends) => Ok(friends),
+        Err(err) => Err(format!("Error getting friends: {err:?}")),
+    }
+}
+
+#[tauri::command]
+async fn remove_friend(public_key: String, node: State<'_, Node>) -> Result<(), String> {
+    match node.remove_friend(public_key).await {
+        Ok(_) => Ok(()),
+        Err(err) => Err(format!("Error removing friend: {err:?}")),
+    }
+}
+
 mod chat;
 mod forge;
 mod message;
@@ -96,7 +123,10 @@ pub fn run() {
             add_member,
             get_members,
             send_message,
-            get_messages
+            get_messages,
+            add_friend,
+            get_friends,
+            remove_friend
         ])
         .setup(|app| {
             let handle = app.handle().clone();

@@ -1,0 +1,15 @@
+{
+	"/": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/chat/[chatId]": [
+		"src/routes/+layout.ts"
+	],
+	"/friends": [
+		"src/routes/+layout.ts"
+	],
+	"/groups": [
+		"src/routes/+layout.ts"
+	]
+}

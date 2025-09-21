@@ -18,7 +18,7 @@ impl SpaceId for ChatId {}
 
 pub type DashSpace = p2panda_spaces::space::Space<
     ChatId,
-    TestStore,
+    SpacesStore,
     DashForge,
     SpaceControlMessage,
     TestConditions,
@@ -27,7 +27,7 @@ pub type DashSpace = p2panda_spaces::space::Space<
 
 pub type DashGroup = p2panda_spaces::group::Group<
     ChatId,
-    TestStore,
+    SpacesStore,
     DashForge,
     SpaceControlMessage,
     TestConditions,
@@ -36,7 +36,7 @@ pub type DashGroup = p2panda_spaces::group::Group<
 
 pub type DashManager = Manager<
     ChatId,
-    TestStore,
+    SpacesStore,
     DashForge,
     SpaceControlMessage,
     TestConditions,
@@ -45,7 +45,7 @@ pub type DashManager = Manager<
 
 pub type TestSpaceError = SpaceError<
     ChatId,
-    TestStore,
+    SpacesStore,
     DashForge,
     SpaceControlMessage,
     TestConditions,

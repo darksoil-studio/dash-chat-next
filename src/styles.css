@@ -20,6 +20,8 @@
   --text-muted: #666;
   --bg-color: #ffffff;
   --border-color: #e0e0e0;
+  --accent-color: #646cff;
+  --accent-hover: #535bf2;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -113,6 +115,8 @@ button {
     --text-muted: #999;
     --bg-color: #1a1a1a;
     --border-color: #444;
+    --accent-color: #646cff;
+    --accent-hover: #535bf2;
   }
 
   a:hover {
@@ -121,11 +125,12 @@ button {
 
   input,
   button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
+    color: var(--text-color);
+    background-color: var(--bg-color);
+    border-color: var(--border-color);
   }
 
   button:active {
-    background-color: #0f0f0f69;
+    background-color: rgba(255, 255, 255, 0.1);
   }
 }

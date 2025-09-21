@@ -1,4 +1,4 @@
 procs:
-  agent1: pnpm tauri dev --no-watch --no-dev-server |& tee proc1.log
-  agent2: pnpm tauri dev --no-watch --no-dev-server |& tee proc2.log
+  agent1: sleep 0 && pnpm tauri dev --no-watch --no-dev-server
+  agent2: sleep 1 && pnpm tauri dev --no-watch --no-dev-server
   ui: pnpm dev

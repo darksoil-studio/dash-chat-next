@@ -3,13 +3,13 @@ use crate::spaces::{SpaceControlMessage, SpacesArgs};
 use super::*;
 
 impl Node {
-    /// Internal function to start the necessary tasks for processing chat
+    /// Internal function to start the necessary tasks for processing group chat
     /// network activity.
     ///
     /// This must be called:
-    /// - when created a new chat
-    /// - when initializing the node, for each existing chat
-    pub(super) async fn initialize_chat(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+    /// - when created a new group chat
+    /// - when initializing the node, for each existing group chat
+    pub(super) async fn initialize_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
         let (network_tx, network_rx, gossip_ready) =
             self.network.subscribe(chat_id.clone()).await?;
 
@@ -56,7 +56,7 @@ impl Node {
             let mut author_store = self.author_store.clone();
 
             let topic = chat_id.clone();
-            let chats = self.chats.clone();
+            let manager = self.manager.clone();
             task::spawn(async move {
                 while let Some(operation) = stream.next().await {
                     // let log_id: Option<LogId> = operation.header.extension();
@@ -77,15 +77,7 @@ impl Node {
                             }
                             _ => {}
                         }
-                        chats
-                            .write()
-                            .await
-                            .get_mut(&topic)
-                            .ok_or(anyhow!("Chat not found"))?
-                            .manager
-                            .process(&control_message)
-                            .await
-                            .expect("TODO ?");
+                        manager.process(&control_message).await.expect("TODO ?");
                     }
 
                     let body_len = operation.body.as_ref().map_or(0, |body| body.size());
@@ -100,20 +92,7 @@ impl Node {
             });
         }
 
-        let rng = Rng::default();
-
-        let spaces_store = crate::spaces::create_test_store(self.private_key.clone());
-        let forge = DashForge {
-            chat_id,
-            private_key: self.private_key.clone(),
-        };
-
-        let manager = DashManager::new(spaces_store, forge, rng).unwrap();
-
-        let chat_network = ChatNetwork {
-            sender: network_tx,
-            manager,
-        };
+        let chat_network = ChatNetwork { sender: network_tx };
         self.chats
             .write()
             .await

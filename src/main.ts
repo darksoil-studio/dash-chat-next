@@ -1,8 +1,5 @@
-import { mount } from 'svelte';
-import App from './App.svelte';
+// SvelteKit entrypoint
+// This file is automatically handled by SvelteKit
+// The actual entrypoint is defined in app.html and the routing is handled
+// by the file-based routing system in the routes/ directory
 
-const app = mount(App, {
-  target: document.getElementById('app')!,
-});
-
-export default app;

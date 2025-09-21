@@ -7,7 +7,6 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct DashForge {
-    pub chat_id: ChatId,
     pub private_key: PrivateKey,
 }
 
