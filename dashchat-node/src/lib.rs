@@ -13,9 +13,10 @@ pub mod testing;
 use p2panda_core::IdentityError;
 
 pub use node::{Node, NodeConfig, Notification};
-pub use operation::{HeaderData, InvitationMessage};
+pub use operation::InvitationMessage;
 pub use p2panda_core::PrivateKey;
 pub use p2panda_spaces::ActorId;
+use serde::{Serialize, de::DeserializeOwned};
 
 pub use crate::{chat::ChatId, message::ChatMessage, spaces::MemberCode};
 
@@ -57,5 +58,15 @@ impl From<ActorId> for PK {
 impl From<PK> for ActorId {
     fn from(pk: PK) -> Self {
         Self::from_bytes(pk.0.as_bytes()).unwrap()
+    }
+}
+
+pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
+    fn as_bytes(&self) -> Vec<u8> {
+        p2panda_core::cbor::encode_cbor(&self).unwrap()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, p2panda_core::cbor::DecodeError> {
+        p2panda_core::cbor::decode_cbor(bytes)
     }
 }

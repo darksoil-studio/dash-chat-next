@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result, anyhow};
 use p2panda_auth::Access;
-use p2panda_core::cbor::DecodeError;
+use p2panda_core::cbor::{DecodeError, encode_cbor};
 use p2panda_core::{Body, Header, PrivateKey};
 use p2panda_discovery::Discovery;
 use p2panda_discovery::mdns::LocalDiscovery;
@@ -32,10 +32,9 @@ use crate::friend::Friend;
 use crate::message::ChatMessage;
 use crate::network::{AuthorStore, LogId, Topic};
 use crate::operation::{
-    Extensions, HeaderData, InvitationMessage, Payload, decode_gossip_message,
-    encode_gossip_message,
+    Extensions, InvitationMessage, Payload, decode_gossip_message, encode_gossip_message,
 };
-use crate::spaces::{DashManager, SpacesStore};
+use crate::spaces::{DashManager, DashSpace, SpacesStore};
 
 pub use stream_processing::Notification;
 
@@ -315,6 +314,8 @@ impl Node {
             return Ok(vec![]);
         };
 
+        let space = self.space(chat_id).await?;
+
         let messages = log
             .into_iter()
             .filter_map(|(_h, body)| {
@@ -331,9 +332,21 @@ impl Node {
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn send_message(&self, chat_id: ChatId, message: ChatMessage) -> anyhow::Result<()> {
+        let space = self
+            .manager
+            .space(chat_id)
+            .await
+            .expect("TODO ?")
+            .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?;
+
+        let encrypted = space
+            .publish(&encode_cbor(&message.clone())?)
+            .await
+            .expect("TODO ?");
+
         let topic = chat_id.into();
 
-        self.author_operation(topic, Payload::ChatMessage(message.clone()))
+        self.author_operation(topic, Payload::SpaceControl(encrypted))
             .await?;
 
         Ok(())
@@ -391,5 +404,10 @@ impl Node {
         // TODO: shutdown inbox task, etc.
         self.friends.write().await.remove(&public_key);
         Ok(())
+    }
+
+    pub async fn space(&self, chat_id: ChatId) -> anyhow::Result<DashSpace> {
+        let space = self.manager.space(chat_id).await.expect("TODO ?");
+        space.ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))
     }
 }

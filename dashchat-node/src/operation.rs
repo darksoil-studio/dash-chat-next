@@ -2,6 +2,7 @@ use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, PruneFlag};
 use serde::{Deserialize, Serialize};
 
+use crate::Cbor;
 use crate::chat::ChatId;
 use crate::message::ChatMessage;
 use crate::network::LogId;
@@ -10,21 +11,6 @@ use crate::spaces::SpaceControlMessage;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Extensions {
     pub log_id: LogId,
-
-    /// This determines whether this is a normal chat message or a space control message.
-    ///
-    // TODO: some redundancy here with fields in the header, but I see no way around it
-    //       due to the requirement of the Forge to not be concerned with log replication.
-    // - the author field is redundant
-    // - the hash could just be the hash of the header
-    pub data: HeaderData,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HeaderData {
-    SpaceControl(Box<SpaceControlMessage>),
-    Invitation(InvitationMessage),
-    UseBody,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,12 +20,13 @@ pub enum InvitationMessage {
     Friend,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Payload {
     SpaceControl(SpaceControlMessage),
     Invitation(InvitationMessage),
-    ChatMessage(ChatMessage),
 }
+
+impl Cbor for Payload {}
 
 pub type Header = p2panda_core::Header<Extensions>;
 

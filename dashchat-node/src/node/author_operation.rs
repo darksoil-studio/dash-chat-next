@@ -1,6 +1,6 @@
 use p2panda_core::Operation;
 
-use crate::operation::Payload;
+use crate::{Cbor, operation::Payload};
 
 use super::*;
 
@@ -85,18 +85,10 @@ pub(crate) async fn create_operation(
     let public_key = private_key.public_key();
     let log_id = topic.clone();
 
-    let (data, body) = match payload {
-        Payload::ChatMessage(message) => (
-            HeaderData::UseBody,
-            Some(Body::new(message.as_bytes().as_slice())),
-        ),
-        Payload::Invitation(invitation) => (HeaderData::Invitation(invitation.into()), None),
-        Payload::SpaceControl(spaces_args) => (HeaderData::SpaceControl(spaces_args.into()), None),
-    };
+    let body = Some(Body::new(payload.as_bytes().as_slice()));
 
     let extensions = Extensions {
         log_id: log_id.clone(),
-        data,
     };
 
     // TODO: atomicity, see https://github.com/p2panda/p2panda/issues/798

@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use p2panda_core::cbor::{DecodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
 
 use crate::PK;
@@ -11,16 +10,6 @@ pub struct ChatMessage {
     // #[serde(with = "public_key_serde")]
     pub author: PK, // Current user's key
     pub timestamp: u64,
-}
-
-impl ChatMessage {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        encode_cbor(&self).unwrap()
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        decode_cbor(bytes)
-    }
 }
 
 mod public_key_serde {
