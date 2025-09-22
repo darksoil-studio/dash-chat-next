@@ -1,24 +1,22 @@
 mod chat;
 mod forge;
 mod friend;
-mod message;
 mod network;
 mod node;
 mod operation;
 mod spaces;
+mod util;
 
 #[cfg(feature = "testing")]
 pub mod testing;
 
 use p2panda_core::IdentityError;
 
+pub use chat::{ChatId, ChatMessage, ChatMessageContent};
 pub use node::{Node, NodeConfig, Notification};
-pub use operation::InvitationMessage;
+pub use operation::{InvitationMessage, Payload};
 pub use p2panda_core::PrivateKey;
 pub use p2panda_spaces::ActorId;
-use serde::{Serialize, de::DeserializeOwned};
-
-pub use crate::{chat::ChatId, message::ChatMessage, spaces::MemberCode};
 
 #[derive(
     Copy,
@@ -62,11 +60,21 @@ impl From<PK> for ActorId {
 }
 
 pub trait Cbor: serde::Serialize + serde::de::DeserializeOwned {
-    fn as_bytes(&self) -> Vec<u8> {
-        p2panda_core::cbor::encode_cbor(&self).unwrap()
+    fn as_bytes(&self) -> Result<Vec<u8>, p2panda_core::cbor::EncodeError> {
+        p2panda_core::cbor::encode_cbor(&self)
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, p2panda_core::cbor::DecodeError> {
         p2panda_core::cbor::decode_cbor(bytes)
+    }
+}
+
+pub trait AsBody: Cbor {
+    fn try_into_body(&self) -> Result<p2panda_core::Body, p2panda_core::cbor::EncodeError> {
+        Ok(p2panda_core::Body::new(self.as_bytes()?.as_slice()))
+    }
+
+    fn try_from_body(body: p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {
+        Self::from_bytes(body.to_bytes().as_slice())
     }
 }

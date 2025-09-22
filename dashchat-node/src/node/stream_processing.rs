@@ -9,7 +9,7 @@ use super::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
-    pub data: HeaderData,
+    pub payload: Payload,
     pub author: PK,
     pub timestamp: u64,
 }
@@ -27,7 +27,7 @@ impl Node {
         Ok(network_tx)
     }
 
-    pub(super) async fn initialize_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+    pub(super) async fn initialize_group(&self, chat_id: ChatId) -> anyhow::Result<Chat> {
         if let Some(chat_network) = self.chats.read().await.get(&chat_id) {
             return Ok(chat_network.clone());
         }
@@ -38,13 +38,10 @@ impl Node {
 
         let (network_tx, _gossip_ready) = self.initialize_topic(chat_id.into()).await?;
 
-        let chat_network = ChatNetwork { sender: network_tx };
-        self.chats
-            .write()
-            .await
-            .insert(chat_id, chat_network.clone());
+        let chat = Chat::new(network_tx);
+        self.chats.write().await.insert(chat_id, chat.clone());
 
-        Ok(chat_network)
+        Ok(chat)
     }
 
     /// Internal function to start the necessary tasks for processing group chat
@@ -125,28 +122,28 @@ impl Node {
                     continue;
                 };
 
-                tracing::info!(
-                    ?topic,
-                    ?extensions.data,
-                    "RECEIVED OPERATION"
-                );
+                let payload = body.map(|body| Payload::try_from_body(body)).transpose()?;
 
-                match &extensions.data {
-                    HeaderData::SpaceControl(control_message) => {
-                        match control_message.spaces_args {
-                            SpacesArgs::SpaceMembership { space_id, .. }
-                            | SpacesArgs::SpaceUpdate { space_id, .. }
-                            | SpacesArgs::Application { space_id, .. } => {
-                                // TODO: maybe close down the chat tasks if we are kicked out?
-                            }
-                            _ => {}
-                        }
-                        node.manager
-                            .process(&control_message)
-                            .await
-                            .expect("TODO ?");
+                tracing::trace!(?topic, ?payload, "RECEIVED OPERATION");
+
+                match &payload {
+                    Some(Payload::SpaceControl(control_message)) => {
+                        // we handle these when getting messages
+
+                        // match control_message.spaces_args {
+                        //     SpacesArgs::SpaceMembership { space_id, .. }
+                        //     | SpacesArgs::SpaceUpdate { space_id, .. }
+                        //     | SpacesArgs::Application { space_id, .. } => {
+                        //         // TODO: maybe close down the chat tasks if we are kicked out?
+                        //     }
+                        //     _ => {}
+                        // }
+                        // node.manager
+                        //     .process(&control_message)
+                        //     .await
+                        //     .expect("TODO ?");
                     }
-                    HeaderData::Invitation(invitation) => {
+                    Some(Payload::Invitation(invitation)) => {
                         tracing::debug!(?invitation, "received invitation message");
                         match invitation {
                             InvitationMessage::JoinGroup(chat_id) => {
@@ -161,13 +158,14 @@ impl Node {
                             }
                         }
                     }
-                    HeaderData::UseBody => {}
+                    None => {}
                 }
 
-                if let Some(notification_tx) = &node.notification_tx {
+                if let Some((notification_tx, payload)) = node.notification_tx.clone().zip(payload)
+                {
                     notification_tx
                         .send(Notification {
-                            data: extensions.data,
+                            payload,
                             author: header.public_key.into(),
                             timestamp: header.timestamp,
                         })

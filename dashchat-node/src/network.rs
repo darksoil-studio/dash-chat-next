@@ -49,11 +49,11 @@ impl<T: Eq + std::hash::Hash + std::fmt::Debug + Clone> AuthorStore<T> {
             .entry(topic.clone())
             .and_modify(|public_keys| {
                 if public_keys.insert(public_key) {
-                    tracing::info!(?topic, ?pk, "added author");
+                    tracing::debug!(?topic, ?pk, "added author");
                 }
             })
             .or_insert({
-                tracing::info!(?topic, ?pk, "added author (first in topic)");
+                tracing::debug!(?topic, ?pk, "added author (first in topic)");
                 let mut public_keys = HashSet::new();
                 public_keys.insert(public_key);
                 public_keys

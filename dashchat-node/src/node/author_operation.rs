@@ -1,6 +1,6 @@
 use p2panda_core::Operation;
 
-use crate::{Cbor, operation::Payload};
+use crate::{AsBody, Cbor, operation::Payload};
 
 use super::*;
 
@@ -12,7 +12,7 @@ impl Node {
         &self,
         topic: Topic,
         payload: Payload,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<Header<Extensions>, anyhow::Error> {
         let Operation {
             header,
             body,
@@ -72,7 +72,7 @@ impl Node {
             }
         }
 
-        Ok(())
+        Ok(header)
     }
 }
 
@@ -85,7 +85,7 @@ pub(crate) async fn create_operation(
     let public_key = private_key.public_key();
     let log_id = topic.clone();
 
-    let body = Some(Body::new(payload.as_bytes().as_slice()));
+    let body = Some(payload.try_into_body()?);
 
     let extensions = Extensions {
         log_id: log_id.clone(),

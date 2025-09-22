@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use p2panda_auth::Access;
 use p2panda_core::cbor::{DecodeError, encode_cbor};
 use p2panda_core::{Body, Header, PrivateKey};
@@ -16,6 +16,7 @@ use p2panda_net::config::GossipConfig;
 use p2panda_net::{
     FromNetwork, Network, NetworkBuilder, ResyncConfiguration, SyncConfiguration, ToNetwork,
 };
+use p2panda_spaces::event::Event;
 use p2panda_spaces::member::Member;
 use p2panda_store::{LogStore, MemoryStore};
 use p2panda_stream::{DecodeExt, IngestExt};
@@ -25,16 +26,17 @@ use tokio::task;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
 use tracing::Instrument;
 
-use crate::PK;
-use crate::chat::ChatId;
+use crate::chat::{Chat, ChatId};
+use crate::chat::{ChatMessage, ChatMessageContent};
 use crate::forge::DashForge;
 use crate::friend::Friend;
-use crate::message::ChatMessage;
 use crate::network::{AuthorStore, LogId, Topic};
 use crate::operation::{
     Extensions, InvitationMessage, Payload, decode_gossip_message, encode_gossip_message,
 };
-use crate::spaces::{DashManager, DashSpace, SpacesStore};
+use crate::spaces::{DashManager, DashSpace, SpaceControlMessage, SpacesArgs, SpacesStore};
+use crate::util::ResultExt;
+use crate::{AsBody, Cbor, PK};
 
 pub use stream_processing::Notification;
 
@@ -57,7 +59,7 @@ impl Default for NodeConfig {
 pub struct Node {
     op_store: MemoryStore<LogId, Extensions>,
     pub network: Network<Topic>,
-    chats: Arc<RwLock<HashMap<ChatId, ChatNetwork>>>,
+    chats: Arc<RwLock<HashMap<ChatId, Chat>>>,
     author_store: AuthorStore<Topic>,
     spaces_store: SpacesStore,
     manager: DashManager,
@@ -65,11 +67,6 @@ pub struct Node {
     private_key: PrivateKey,
     friends: Arc<RwLock<HashMap<PK, Friend>>>,
     notification_tx: Option<mpsc::Sender<Notification>>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ChatNetwork {
-    pub(crate) sender: mpsc::Sender<ToNetwork>,
 }
 
 impl Node {
@@ -202,7 +199,7 @@ impl Node {
 
     /// Create a new chat Space, and subscribe to the Topic for this chat.
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
-    pub async fn create_group(&self) -> anyhow::Result<(ChatId, ChatNetwork)> {
+    pub async fn create_group(&self) -> anyhow::Result<(ChatId, Chat)> {
         let chat_id = ChatId::random();
         let chat = self.initialize_group(chat_id).await?;
 
@@ -276,7 +273,7 @@ impl Node {
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
-    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
+    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<Chat> {
         let chat = self.initialize_group(chat_id).await?;
 
         Ok(chat)
@@ -306,32 +303,78 @@ impl Node {
         chat_id: ChatId,
         public_key: PK,
     ) -> anyhow::Result<Vec<ChatMessage>> {
-        let log_id = chat_id.into();
-        let log = self.op_store.get_log(&public_key, &log_id, None).await?;
+        let mut chats = self.chats.write().await;
+        let chat = chats
+            .get_mut(&chat_id)
+            .ok_or_else(|| anyhow!("Chat not found: {chat_id}"))?;
 
-        let Some(log) = log else {
+        let from = chat.last_seq_num.get(&public_key).cloned();
+
+        let log_id = chat_id.into();
+        let Some(log) = self.op_store.get_log(&public_key, &log_id, from).await? else {
+            assert!(
+                from.is_none(),
+                "log should be found if it was read from before"
+            );
             tracing::warn!(%public_key, %chat_id, "no log found");
             return Ok(vec![]);
         };
 
-        let space = self.space(chat_id).await?;
+        let mut new_messages = vec![];
 
-        let messages = log
-            .into_iter()
-            .filter_map(|(_h, body)| {
-                if let Some(body) = body {
-                    Some(ChatMessage::from_bytes(body.to_bytes().as_slice()))
-                } else {
-                    None
+        for (header, body) in log {
+            let body = body.ok_or_else(|| anyhow!("No body found"))?;
+            let payload = Payload::try_from_body(body)?;
+            match payload {
+                Payload::SpaceControl(space_control) => {
+                    let events = self
+                        .manager
+                        .process(&space_control)
+                        .await
+                        .expect("TODO ?")
+                        .into_iter()
+                        .flat_map(|e| match e {
+                            Event::Application { space_id, data } => {
+                                if space_id != chat_id {
+                                    return None;
+                                }
+                                let content = ChatMessageContent::from_bytes(&data)
+                                    .ok_or_warn("Can't parse message")?;
+
+                                Some(ChatMessage {
+                                    content,
+                                    author: header.public_key.into(),
+                                    timestamp: header.timestamp,
+                                })
+                            }
+                            Event::Removed { space_id } => {
+                                if space_id == chat_id {
+                                    chat.removed = true;
+                                }
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    new_messages.extend(events);
                 }
-            })
-            .collect::<Result<Vec<_>, DecodeError>>()?;
+                Payload::Invitation(invitation) => {
+                    tracing::debug!(?invitation, "received invitation message");
+                }
+            }
+        }
 
-        Ok(messages)
+        new_messages.sort_by_key(|m| m.timestamp);
+        chat.messages.extend(new_messages);
+
+        Ok(chat.messages.clone())
     }
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
-    pub async fn send_message(&self, chat_id: ChatId, message: ChatMessage) -> anyhow::Result<()> {
+    pub async fn send_message(
+        &self,
+        chat_id: ChatId,
+        message: ChatMessageContent,
+    ) -> anyhow::Result<ChatMessage> {
         let space = self
             .manager
             .space(chat_id)
@@ -346,10 +389,15 @@ impl Node {
 
         let topic = chat_id.into();
 
-        self.author_operation(topic, Payload::SpaceControl(encrypted))
+        let header = self
+            .author_operation(topic, Payload::SpaceControl(encrypted))
             .await?;
 
-        Ok(())
+        Ok(ChatMessage {
+            content: message,
+            author: header.public_key.into(),
+            timestamp: header.timestamp,
+        })
     }
 
     pub fn public_key(&self) -> PK {

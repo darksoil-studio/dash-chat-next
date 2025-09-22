@@ -2,11 +2,10 @@ use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, PruneFlag};
 use serde::{Deserialize, Serialize};
 
-use crate::Cbor;
 use crate::chat::ChatId;
-use crate::message::ChatMessage;
 use crate::network::LogId;
 use crate::spaces::SpaceControlMessage;
+use crate::{AsBody, Cbor};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Extensions {
@@ -27,6 +26,7 @@ pub enum Payload {
 }
 
 impl Cbor for Payload {}
+impl AsBody for Payload {}
 
 pub type Header = p2panda_core::Header<Extensions>;
 

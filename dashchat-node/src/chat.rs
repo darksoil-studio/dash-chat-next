@@ -1,6 +1,42 @@
-use std::{convert::Infallible, str::FromStr};
+mod message;
+pub use message::*;
 
+mod tests;
+
+use std::{collections::HashMap, convert::Infallible, str::FromStr};
+
+use p2panda_net::ToNetwork;
 use serde::{Deserialize, Serialize};
+
+use crate::PK;
+
+#[derive(Clone, Debug)]
+pub struct Chat {
+    /// The gossip overlay sender for this chat.
+    pub(crate) sender: tokio::sync::mpsc::Sender<ToNetwork>,
+
+    /// The processed decrypted messages for this chat.
+    pub(crate) messages: Vec<ChatMessage>,
+
+    /// The last sequence number processed for each author's log.
+    /// Any message beyond this sequence number can be processed and
+    /// added to the messages vector.
+    pub(crate) last_seq_num: HashMap<PK, u64>,
+
+    /// Whether I have been removed from this chat.
+    pub(crate) removed: bool,
+}
+
+impl Chat {
+    pub fn new(sender: tokio::sync::mpsc::Sender<ToNetwork>) -> Self {
+        Self {
+            sender,
+            messages: vec![],
+            last_seq_num: HashMap::new(),
+            removed: false,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, derive_more::Deref)]
 #[serde(into = "String", try_from = "String")]

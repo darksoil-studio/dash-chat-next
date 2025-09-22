@@ -13,6 +13,14 @@ pub struct ChatOverview {
     pub member_count: usize,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub content: String,
+    pub author: PK,
+    pub timestamp: u64,
+}
+
 #[tauri::command]
 async fn me(node: State<'_, Node>) -> Result<MemberCode, String> {
     let member = node.me().await.map_err(|e| e.to_string())?;
