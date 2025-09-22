@@ -1,13 +1,9 @@
 use std::time::SystemTime;
 
-use node::Node;
-use p2panda_core::{PrivateKey, PublicKey};
-use p2panda_spaces::ActorId;
+use dashchat_node::*;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tauri_plugin_log::log::LevelFilter;
-
-use crate::{chat::ChatId, message::ChatMessage, spaces::MemberCode};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -137,15 +133,6 @@ async fn remove_friend(public_key: PublicKey, node: State<'_, Node>) -> Result<(
     }
 }
 
-mod chat;
-mod forge;
-mod friend;
-mod message;
-mod network;
-mod node;
-mod operation;
-pub mod spaces;
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -181,7 +168,7 @@ pub fn run() {
                     println!("*** public_key == pk2: {}", public_key == pk2);
                 }
 
-                let node = Node::new(private_key, node::Config::default()).await;
+                let node = Node::new(private_key, dashchat_node::NodeConfig::default()).await;
 
                 match node {
                     Ok(node) => {

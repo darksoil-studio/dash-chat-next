@@ -18,6 +18,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+dashchat-node = { path = "../dashchat-node" }
+
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-log = "2.7.0"
@@ -25,37 +27,12 @@ tauri-plugin-log = "2.7.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-anyhow = "1.0.95"
-async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
-# p2panda-core = "0.3.1"
-# p2panda-discovery = { version = "0.3.1", features = ["mdns"] }
-# p2panda-net = "0.3.1"
-# p2panda-store = "0.3.1"
-# p2panda-stream = "0.3.1"
-# p2panda-sync = { version = "0.3.1", features = ["log-sync"] }
-p2panda-auth = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
-p2panda-core = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
-p2panda-encryption = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
-p2panda-discovery = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api", features = [
-  "mdns",
-] }
-p2panda-net = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
-p2panda-store = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
-p2panda-stream = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api" }
-p2panda-sync = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api", features = [
-  "log-sync",
-] }
-p2panda-spaces = { git = "https://github.com/p2panda/p2panda.git", branch = "spaces-groups-api", features = [
-  "test_utils",
-] }
+rand = "0.9.2"
 tokio = { version = "1.43.0", features = ["fs"] }
-hex = "0.4.3"
-
 tokio-stream = "0.1.17"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-rand = "0.9.2"
 
 [patch."https://github.com/p2panda/p2panda.git"]
 p2panda-auth = { path = "/home/michael/gitfork/p2panda/p2panda-auth" }

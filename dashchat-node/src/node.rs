@@ -5,12 +5,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use p2panda_auth::Access;
-use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError};
+use p2panda_core::cbor::{DecodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Header, Operation, PrivateKey, PublicKey};
-use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_discovery::Discovery;
+use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_encryption::Rng;
 use p2panda_net::config::GossipConfig;
 use p2panda_net::{
@@ -20,9 +20,9 @@ use p2panda_spaces::member::Member;
 use p2panda_store::{LogStore, MemoryStore};
 use p2panda_stream::{DecodeExt, IngestExt};
 use p2panda_sync::log_sync::LogSyncProtocol;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tokio::task;
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tokio_stream::{StreamExt, wrappers::ReceiverStream};
 use tracing::{debug, warn};
 
 use crate::chat::ChatId;
@@ -32,8 +32,8 @@ use crate::message::ChatMessage;
 use crate::network::{AuthorStore, LogId, Topic};
 use crate::node::author_operation::create_operation;
 use crate::operation::{
-    decode_gossip_message, encode_gossip_message, Extensions, HeaderData, InvitationMessage,
-    Payload,
+    Extensions, HeaderData, InvitationMessage, Payload, decode_gossip_message,
+    encode_gossip_message,
 };
 use crate::spaces::{DashManager, SpacesStore};
 
@@ -44,9 +44,9 @@ const NETWORK_ID: [u8; 32] = [88; 32];
 const MAX_MESSAGE_SIZE: usize = 1000 * 10; // 10kb max. UDP payload size
 
 #[derive(Clone, Debug)]
-pub struct Config {}
+pub struct NodeConfig {}
 
-impl Default for Config {
+impl Default for NodeConfig {
     fn default() -> Self {
         Self {}
     }
@@ -60,7 +60,7 @@ pub struct Node {
     author_store: AuthorStore<Topic>,
     spaces_store: SpacesStore,
     manager: DashManager,
-    config: Config,
+    config: NodeConfig,
     private_key: PrivateKey,
     friends: Arc<RwLock<HashMap<PublicKey, Friend>>>,
 }
@@ -71,7 +71,7 @@ pub struct ChatNetwork {
 }
 
 impl Node {
-    pub async fn new(private_key: PrivateKey, config: Config) -> Result<Self> {
+    pub async fn new(private_key: PrivateKey, config: NodeConfig) -> Result<Self> {
         let public_key = private_key.public_key();
 
         let mdns = LocalDiscovery::new();
