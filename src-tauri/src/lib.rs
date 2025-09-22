@@ -135,8 +135,8 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::default()
                 .filter(|m| {
-                    m.level() >= Level::Error
-                        || (m.target().starts_with("dashchat_node") && m.level() >= Level::Info)
+                    m.level() <= Level::Error
+                        || (m.target().starts_with("dashchat_node") && m.level() <= Level::Info)
                 })
                 .level(LevelFilter::Info)
                 .build(),

@@ -367,7 +367,7 @@ impl Node {
         self.friends.write().await.insert(
             public_key.clone(),
             Friend {
-                member: member.clone(),
+                // member: member.clone(),
                 network_tx,
             },
         );

@@ -48,6 +48,7 @@ async fn test_group_2() -> anyhow::Result<()> {
         .await
         .unwrap();
 
+    // Bob has joined the group via his inbox topic
     wait_for(
         Duration::from_millis(100),
         Duration::from_secs(5),
