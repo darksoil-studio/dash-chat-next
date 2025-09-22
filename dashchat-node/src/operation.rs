@@ -1,6 +1,5 @@
 use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Extension, Hash, PruneFlag};
-use p2panda_encryption::data_scheme::DirectMessage;
+use p2panda_core::{Body, Extension, PruneFlag};
 use serde::{Deserialize, Serialize};
 
 use crate::chat::ChatId;

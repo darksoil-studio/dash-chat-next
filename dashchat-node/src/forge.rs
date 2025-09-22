@@ -1,4 +1,4 @@
-use p2panda_core::{Body, Operation, PrivateKey, PublicKey};
+use p2panda_core::{PrivateKey, PublicKey};
 
 use crate::{
     chat::ChatId,

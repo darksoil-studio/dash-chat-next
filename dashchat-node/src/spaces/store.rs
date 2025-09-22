@@ -22,7 +22,7 @@ use p2panda_spaces::{
     ActorId, OperationId,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 use super::*;
 

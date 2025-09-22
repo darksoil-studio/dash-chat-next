@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 pub type SpacesArgs = p2panda_spaces::message::SpacesArgs<ChatId, ()>;
 
-use crate::operation::Header;
 
 use super::*;
 

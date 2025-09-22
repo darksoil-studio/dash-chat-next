@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use anyhow::{Context, Result, anyhow};
 use p2panda_auth::Access;
-use p2panda_core::cbor::{DecodeError, decode_cbor, encode_cbor};
+use p2panda_core::cbor::DecodeError;
 use p2panda_core::{Body, Header, PrivateKey};
 use p2panda_discovery::Discovery;
 use p2panda_discovery::mdns::LocalDiscovery;
@@ -31,7 +31,6 @@ use crate::forge::DashForge;
 use crate::friend::Friend;
 use crate::message::ChatMessage;
 use crate::network::{AuthorStore, LogId, Topic};
-use crate::node::author_operation::create_operation;
 use crate::operation::{
     Extensions, HeaderData, InvitationMessage, Payload, decode_gossip_message,
     encode_gossip_message,

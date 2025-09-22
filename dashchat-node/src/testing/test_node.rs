@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use futures::future::BoxFuture;
 use p2panda_core::PrivateKey;
 use tokio::sync::mpsc::Receiver;
 
