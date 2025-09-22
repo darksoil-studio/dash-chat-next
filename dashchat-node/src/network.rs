@@ -58,8 +58,6 @@ impl<T: Eq + std::hash::Hash + std::fmt::Debug + Clone> AuthorStore<T> {
                 public_keys.insert(public_key);
                 public_keys
             });
-
-        println!("authors: {:#?}", authors);
     }
 
     pub async fn authors(&self, topic: &T) -> Option<HashSet<PK>> {

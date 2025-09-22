@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use dashchat_node::*;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
-use tauri_plugin_log::log::LevelFilter;
+use tauri_plugin_log::log::{Level, LevelFilter};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -57,11 +57,7 @@ async fn get_groups(node: State<'_, Node>) -> Result<Vec<ChatOverview>, String> 
 }
 
 #[tauri::command]
-async fn add_member(
-    chat_id: ChatId,
-    pubkey: PublicKey,
-    node: State<'_, Node>,
-) -> Result<(), String> {
+async fn add_member(chat_id: ChatId, pubkey: PK, node: State<'_, Node>) -> Result<(), String> {
     match node.add_member(chat_id, pubkey).await {
         Ok(_) => Ok(()),
         Err(err) => Err(format!("Error adding member: {err:?}")),
@@ -69,11 +65,11 @@ async fn add_member(
 }
 
 #[tauri::command]
-async fn get_members(chat_id: ChatId, node: State<'_, Node>) -> Result<Vec<PublicKey>, String> {
+async fn get_members(chat_id: ChatId, node: State<'_, Node>) -> Result<Vec<PK>, String> {
     match node.get_members(chat_id).await {
         Ok(members) => Ok(members
             .into_iter()
-            .map(|(actor_id, _access)| PublicKey::try_from(actor_id).unwrap())
+            .map(|(actor_id, _access)| PK::try_from(actor_id).unwrap())
             .collect()),
         Err(err) => Err(format!("Error getting participants: {err:?}")),
     }
@@ -110,7 +106,7 @@ async fn get_messages(chat_id: ChatId, node: State<'_, Node>) -> Result<Vec<Chat
 
 // Friend management commands
 #[tauri::command]
-async fn add_friend(friend_code: MemberCode, node: State<'_, Node>) -> Result<PublicKey, String> {
+async fn add_friend(friend_code: MemberCode, node: State<'_, Node>) -> Result<PK, String> {
     match node.add_friend(friend_code.into()).await {
         Ok(public_key) => Ok(public_key),
         Err(err) => Err(format!("Error adding friend: {err:?}")),
@@ -118,7 +114,7 @@ async fn add_friend(friend_code: MemberCode, node: State<'_, Node>) -> Result<Pu
 }
 
 #[tauri::command]
-async fn get_friends(node: State<'_, Node>) -> Result<Vec<PublicKey>, String> {
+async fn get_friends(node: State<'_, Node>) -> Result<Vec<PK>, String> {
     match node.get_friends().await {
         Ok(friends) => Ok(friends),
         Err(err) => Err(format!("Error getting friends: {err:?}")),
@@ -126,7 +122,7 @@ async fn get_friends(node: State<'_, Node>) -> Result<Vec<PublicKey>, String> {
 }
 
 #[tauri::command]
-async fn remove_friend(public_key: PublicKey, node: State<'_, Node>) -> Result<(), String> {
+async fn remove_friend(public_key: PK, node: State<'_, Node>) -> Result<(), String> {
     match node.remove_friend(public_key).await {
         Ok(_) => Ok(()),
         Err(err) => Err(format!("Error removing friend: {err:?}")),
@@ -138,7 +134,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::default()
-                .level(LevelFilter::Error)
+                .filter(|m| {
+                    m.level() >= Level::Error
+                        || (m.target().starts_with("dashchat_node") && m.level() >= Level::Info)
+                })
+                .level(LevelFilter::Info)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
@@ -157,18 +157,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let private_key = PrivateKey::new();
+                let private_key = dashchat_node::PrivateKey::new();
 
-                {
-                    let public_key = private_key.public_key();
-                    println!("*** public_key: {}", public_key);
-                    let actor_id: ActorId = public_key.into();
-                    println!("*** actor_id: {}", actor_id);
-                    let pk2 = PublicKey::try_from(actor_id).unwrap();
-                    println!("*** public_key == pk2: {}", public_key == pk2);
-                }
-
-                let node = Node::new(private_key, dashchat_node::NodeConfig::default()).await;
+                let node = Node::new(private_key, dashchat_node::NodeConfig::default(), None).await;
 
                 match node {
                     Ok(node) => {

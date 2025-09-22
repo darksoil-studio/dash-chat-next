@@ -10,9 +10,11 @@ mod spaces;
 #[cfg(feature = "testing")]
 pub mod testing;
 
+use p2panda_core::IdentityError;
+
 pub use node::{Node, NodeConfig, Notification};
 pub use operation::{HeaderData, InvitationMessage};
-use p2panda_core::IdentityError;
+pub use p2panda_core::PrivateKey;
 pub use p2panda_spaces::ActorId;
 
 pub use crate::{chat::ChatId, message::ChatMessage, spaces::MemberCode};
