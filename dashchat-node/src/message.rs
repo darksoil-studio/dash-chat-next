@@ -1,16 +1,15 @@
 use std::str::FromStr;
 
-use p2panda_core::{
-    cbor::{decode_cbor, encode_cbor, DecodeError},
-    PublicKey,
-};
+use p2panda_core::cbor::{DecodeError, decode_cbor, encode_cbor};
 use serde::{Deserialize, Serialize};
+
+use crate::PK;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub content: String,
     // #[serde(with = "public_key_serde")]
-    pub author: PublicKey, // Current user's key
+    pub author: PK, // Current user's key
     pub timestamp: u64,
 }
 
@@ -25,6 +24,7 @@ impl ChatMessage {
 }
 
 mod public_key_serde {
+    use p2panda_core::PublicKey;
     use serde::{Deserializer, Serializer};
 
     use super::*;

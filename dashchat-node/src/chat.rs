@@ -1,12 +1,8 @@
-use std::{
-    collections::{HashMap, HashSet},
-    convert::Infallible,
-    str::FromStr,
-};
+use std::{convert::Infallible, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash, derive_more::Deref)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, derive_more::Deref)]
 #[serde(into = "String", try_from = "String")]
 pub struct ChatId([u8; 32]);
 
@@ -36,6 +32,14 @@ impl TryFrom<String> for ChatId {
 impl std::fmt::Display for ChatId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(self.0))
+    }
+}
+
+impl std::fmt::Debug for ChatId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut k = self.to_string();
+        k.truncate(8);
+        write!(f, "ChatId|{k}")
     }
 }
 

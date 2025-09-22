@@ -1,4 +1,4 @@
-use p2panda_core::cbor::{encode_cbor, EncodeError};
+use p2panda_core::cbor::{EncodeError, encode_cbor};
 use p2panda_spaces::OperationId;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use crate::operation::Header;
 
 use super::*;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpaceControlMessage {
     pub hash: p2panda_core::Hash,
     pub author: p2panda_spaces::ActorId,

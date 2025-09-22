@@ -1,4 +1,4 @@
-use p2panda_core::cbor::{decode_cbor, encode_cbor, DecodeError, EncodeError};
+use p2panda_core::cbor::{DecodeError, EncodeError, decode_cbor, encode_cbor};
 use p2panda_core::{Body, Extension, Hash, PruneFlag};
 use p2panda_encryption::data_scheme::DirectMessage;
 use serde::{Deserialize, Serialize};
@@ -21,19 +21,18 @@ pub struct Extensions {
     pub data: HeaderData,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HeaderData {
     SpaceControl(Box<SpaceControlMessage>),
     Invitation(InvitationMessage),
     UseBody,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InvitationMessage {
     /// Instructs the recipient to subscribe to the group chat topic.
     JoinGroup(ChatId),
     Friend,
-    Test,
 }
 
 #[derive(Clone, Debug)]

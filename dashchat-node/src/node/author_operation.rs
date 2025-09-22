@@ -7,6 +7,7 @@ use super::*;
 pub type OpStore = p2panda_store::MemoryStore<LogId, Extensions>;
 
 impl Node {
+    #[tracing::instrument(skip_all)]
     pub(super) async fn author_operation(
         &self,
         topic: Topic,
@@ -34,19 +35,7 @@ impl Node {
         )
         .await?;
 
-        {
-            let latest = self
-                .op_store
-                .latest_operation(&self.private_key.public_key(), &topic)
-                .await?;
-
-            println!("*** latest operation: {:?}", latest);
-        }
-
-        println!(
-            "*** author operation ingested for topic: {:?} payload: {:?}",
-            topic, payload,
-        );
+        tracing::debug!(?topic, ?payload, "author operation ingested",);
 
         // Do gossip broadcast for newly created operations
         match topic {
@@ -76,10 +65,9 @@ impl Node {
                             bytes: encode_gossip_message(&header, body.as_ref())?,
                         })
                         .await?;
-                    println!("*** Friend found, gossiping invite: {}", public_key);
+                    tracing::debug!(%public_key, "Friend found, gossiping invite");
                 } else {
-                    println!("*** Friend not found, skipping gossip: {}", public_key);
-                    warn!("Friend not found, skipping gossip: {}", public_key);
+                    tracing::warn!(%public_key, "Friend not found, skipping gossip");
                 }
             }
         }

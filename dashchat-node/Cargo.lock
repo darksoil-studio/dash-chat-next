@@ -638,6 +638,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "derive_more",
+ "futures",
  "hex",
  "p2panda-auth",
  "p2panda-core",

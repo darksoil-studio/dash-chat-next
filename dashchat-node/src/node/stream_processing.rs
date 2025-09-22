@@ -1,20 +1,29 @@
 use p2panda_core::Operation;
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::Sender;
 use tokio_stream::Stream;
 
 use crate::{operation::InvitationMessage, spaces::SpacesArgs};
 
 use super::*;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Notification {
+    pub data: HeaderData,
+    pub author: PK,
+    pub timestamp: u64,
+}
+
 impl Node {
     pub(super) async fn initialize_inbox(
         &self,
-        pubkey: PublicKey,
+        pubkey: PK,
     ) -> anyhow::Result<tokio::sync::mpsc::Sender<ToNetwork>> {
         if let Some(friend) = self.friends.read().await.get(&pubkey) {
             return Ok(friend.network_tx.clone());
         }
 
-        let network_tx = self.initialize_topic(pubkey.into()).await?;
+        let (network_tx, _gossip_ready) = self.initialize_topic(pubkey.into()).await?;
         Ok(network_tx)
     }
 
@@ -27,7 +36,7 @@ impl Node {
             .add_author(chat_id.into(), self.public_key())
             .await;
 
-        let network_tx = self.initialize_topic(chat_id.into()).await?;
+        let (network_tx, _gossip_ready) = self.initialize_topic(chat_id.into()).await?;
 
         let chat_network = ChatNetwork { sender: network_tx };
         self.chats
@@ -47,17 +56,16 @@ impl Node {
     pub(super) async fn initialize_topic(
         &self,
         topic: Topic,
-    ) -> anyhow::Result<mpsc::Sender<ToNetwork>> {
-        println!("*** initializing topic: {:?}", topic);
-        let (network_tx, network_rx, _gossip_ready) = self.network.subscribe(topic.clone()).await?;
+    ) -> anyhow::Result<(Sender<ToNetwork>, tokio::sync::oneshot::Receiver<()>)> {
+        let (network_tx, network_rx, gossip_ready) = self.network.subscribe(topic.clone()).await?;
+        tracing::info!(?topic, "subscribed to topic");
 
         let stream = ReceiverStream::new(network_rx);
         let stream = stream.filter_map(|event| match event {
             FromNetwork::GossipMessage { bytes, .. } => match decode_gossip_message(&bytes) {
                 Ok(result) => Some(result),
                 Err(err) => {
-                    println!("*** decode gossip message error: {err}");
-                    warn!("could not decode gossip message: {err}");
+                    tracing::warn!(?err, "decode gossip message error");
                     None
                 }
             },
@@ -72,8 +80,7 @@ impl Node {
             .filter_map(|result| match result {
                 Ok(operation) => Some(operation),
                 Err(err) => {
-                    println!("*** decode operation error: {err}");
-                    warn!("decode operation error: {err}");
+                    tracing::warn!(?err, "decode operation error");
                     None
                 }
             })
@@ -81,28 +88,27 @@ impl Node {
             .filter_map(|result| match result {
                 Ok(operation) => Some(operation),
                 Err(err) => {
-                    println!("*** ingest operation error: {err}");
-                    warn!("ingest operation error: {err}");
+                    tracing::warn!(?err, "ingest operation error");
                     None
                 }
             });
 
         let author_store = self.author_store.clone();
-        self.spawn_stream_process_loop(stream, author_store, topic);
+        self.spawn_stream_process_loop(stream, author_store, topic.clone());
 
-        Ok(network_tx)
+        Ok((network_tx, gossip_ready))
     }
 
     fn spawn_stream_process_loop(
         &self,
         stream: impl Stream<Item = Operation<Extensions>> + Send + 'static,
-        mut author_store: AuthorStore<Topic>,
+        author_store: AuthorStore<Topic>,
         topic: Topic,
     ) {
         let node = self.clone();
         let mut stream = Box::pin(stream);
         task::spawn(async move {
-            println!("*** stream process loop started for topic: {:?}", topic);
+            tracing::debug!(?topic, "stream process loop started");
             while let Some(operation) = stream.next().await {
                 // let log_id: Option<LogId> = operation.header.extension();
 
@@ -112,20 +118,20 @@ impl Node {
                     .add_author(topic.clone(), header.public_key)
                     .await;
 
-                println!("*** adding author for topic {:?}", topic);
+                tracing::debug!(?topic, "adding author");
 
                 let Some(extensions) = header.extensions else {
-                    println!("*** no extensions");
-                    warn!("no extensions");
+                    tracing::warn!("no extensions");
                     continue;
                 };
 
-                println!(
-                    "*** RECEIVED OPERATION -- topic {topic:?} -- operation: {:?}",
-                    extensions.data
+                tracing::info!(
+                    ?topic,
+                    ?extensions.data,
+                    "RECEIVED OPERATION"
                 );
 
-                match extensions.data {
+                match &extensions.data {
                     HeaderData::SpaceControl(control_message) => {
                         match control_message.spaces_args {
                             SpacesArgs::SpaceMembership { space_id, .. }
@@ -141,35 +147,34 @@ impl Node {
                             .expect("TODO ?");
                     }
                     HeaderData::Invitation(invitation) => {
-                        println!("*** received invitation message: {:?}", invitation);
+                        tracing::debug!(?invitation, "received invitation message");
                         match invitation {
                             InvitationMessage::JoinGroup(chat_id) => {
-                                node.join_group(chat_id).await?;
+                                node.join_group(*chat_id).await?;
                                 // TODO: maybe close down the chat tasks if we are kicked out?
                             }
                             InvitationMessage::Friend => {
-                                println!(
-                                    "*** received friend invitation from: {:?}",
+                                tracing::debug!(
+                                    "received friend invitation from: {:?}",
                                     header.public_key
                                 );
-                            }
-                            InvitationMessage::Test => {
-                                println!("*** received test message from: {:?}", header.public_key);
                             }
                         }
                     }
                     HeaderData::UseBody => {}
                 }
 
-                let body_len = body.as_ref().map_or(0, |body| body.size());
-                debug!(
-                    seq_num = header.seq_num,
-                    len = body_len,
-                    hash = %hash,
-                    "received operation"
-                );
+                if let Some(notification_tx) = &node.notification_tx {
+                    notification_tx
+                        .send(Notification {
+                            data: extensions.data,
+                            author: header.public_key.into(),
+                            timestamp: header.timestamp,
+                        })
+                        .await?;
+                }
             }
-            println!("*** ingestion stream ended");
+            tracing::warn!("ingestion stream ended");
             anyhow::Ok(())
         });
     }

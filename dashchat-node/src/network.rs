@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use p2panda_core::PublicKey;
 use tokio::sync::RwLock;
 
 use async_trait::async_trait;
 use p2panda_sync::log_sync::TopicLogMap;
 
+use crate::PK;
 use crate::chat::ChatId;
-use p2panda_core::PublicKey;
 use p2panda_net::TopicId;
 use p2panda_sync::TopicQuery;
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, derive_more::From)]
 pub enum Topic {
     Chat(ChatId),
-    Inbox(PublicKey),
+    Inbox(PK),
 }
 
 impl TopicQuery for Topic {}
@@ -32,30 +33,45 @@ impl TopicId for Topic {
 pub type LogId = Topic;
 
 #[derive(Clone, Debug)]
-pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<PublicKey>>>>);
+pub struct AuthorStore<T>(pub(crate) Arc<RwLock<HashMap<T, HashSet<PK>>>>);
 
-impl<T: Eq + std::hash::Hash> AuthorStore<T> {
+impl<T: Eq + std::hash::Hash + std::fmt::Debug + Clone> AuthorStore<T> {
     pub fn new() -> Self {
         Self(Arc::new(RwLock::new(HashMap::new())))
     }
 
-    pub async fn add_author(&self, topic: T, public_key: PublicKey) {
+    pub async fn add_author(&self, topic: T, public_key: impl Into<PK>) {
         let mut authors = self.0.write().await;
+        let public_key = public_key.into();
+        let pk = PK::from(public_key);
+
         authors
-            .entry(topic)
+            .entry(topic.clone())
             .and_modify(|public_keys| {
-                public_keys.insert(public_key);
+                if public_keys.insert(public_key) {
+                    tracing::info!(?topic, ?pk, "added author");
+                }
             })
             .or_insert({
+                tracing::info!(?topic, ?pk, "added author (first in topic)");
                 let mut public_keys = HashSet::new();
                 public_keys.insert(public_key);
                 public_keys
             });
+
+        println!("authors: {:#?}", authors);
     }
 
-    pub async fn authors(&self, topic: &T) -> Option<HashSet<PublicKey>> {
+    pub async fn authors(&self, topic: &T) -> Option<HashSet<PK>> {
         let authors = self.0.read().await;
-        authors.get(topic).cloned()
+        Some(
+            authors
+                .get(topic)
+                .cloned()?
+                .into_iter()
+                .map(PK::from)
+                .collect(),
+        )
     }
 }
 
@@ -71,7 +87,7 @@ impl<Topic: Eq + std::hash::Hash + TopicQuery> TopicLogMap<Topic, Topic> for Aut
                 let mut map = HashMap::with_capacity(authors.len());
                 for author in authors {
                     // We write all data of one author into one log for now.
-                    map.insert(author, vec![topic.clone()]);
+                    map.insert(author.into(), vec![topic.clone()]);
                 }
                 map
             }

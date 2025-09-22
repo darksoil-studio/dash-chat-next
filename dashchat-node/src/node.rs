@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use anyhow::{Context, Result, anyhow};
 use p2panda_auth::Access;
 use p2panda_core::cbor::{DecodeError, decode_cbor, encode_cbor};
-use p2panda_core::{Body, Header, Operation, PrivateKey, PublicKey};
+use p2panda_core::{Body, Header, PrivateKey};
 use p2panda_discovery::Discovery;
 use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_encryption::Rng;
@@ -23,8 +23,9 @@ use p2panda_sync::log_sync::LogSyncProtocol;
 use tokio::sync::{RwLock, mpsc};
 use tokio::task;
 use tokio_stream::{StreamExt, wrappers::ReceiverStream};
-use tracing::{debug, warn};
+use tracing::Instrument;
 
+use crate::PK;
 use crate::chat::ChatId;
 use crate::forge::DashForge;
 use crate::friend::Friend;
@@ -37,7 +38,9 @@ use crate::operation::{
 };
 use crate::spaces::{DashManager, SpacesStore};
 
-const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
+pub use stream_processing::Notification;
+
+// const RELAY_ENDPOINT: &str = "https://wasser.liebechaos.org";
 
 const NETWORK_ID: [u8; 32] = [88; 32];
 
@@ -55,14 +58,15 @@ impl Default for NodeConfig {
 #[derive(Clone, Debug)]
 pub struct Node {
     op_store: MemoryStore<LogId, Extensions>,
-    network: Network<Topic>,
+    pub network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, ChatNetwork>>>,
     author_store: AuthorStore<Topic>,
     spaces_store: SpacesStore,
     manager: DashManager,
     config: NodeConfig,
     private_key: PrivateKey,
-    friends: Arc<RwLock<HashMap<PublicKey, Friend>>>,
+    friends: Arc<RwLock<HashMap<PK, Friend>>>,
+    notification_tx: Option<mpsc::Sender<Notification>>,
 }
 
 #[derive(Clone, Debug)]
@@ -71,13 +75,18 @@ pub struct ChatNetwork {
 }
 
 impl Node {
-    pub async fn new(private_key: PrivateKey, config: NodeConfig) -> Result<Self> {
-        let public_key = private_key.public_key();
+    #[tracing::instrument(skip_all, fields(me = ?PK::from(private_key.public_key())))]
+    pub async fn new(
+        private_key: PrivateKey,
+        config: NodeConfig,
+        notification_tx: Option<mpsc::Sender<Notification>>,
+    ) -> Result<Self> {
+        let public_key = PK::from(private_key.public_key());
 
         let mdns = LocalDiscovery::new();
 
         let op_store = MemoryStore::<LogId, Extensions>::new();
-        let mut author_store = AuthorStore::new();
+        let author_store = AuthorStore::new();
 
         {
             let op_store = op_store.clone();
@@ -89,7 +98,7 @@ impl Node {
                         .await
                         .unwrap_or_default()
                     {
-                        println!("*** log height: {pk} -> {seq}");
+                        tracing::debug!("log height: {pk} -> {seq}");
                     }
                 }
             });
@@ -99,33 +108,37 @@ impl Node {
             .add_author(Topic::Inbox(public_key.clone()), public_key)
             .await;
 
-        let relay_url = RELAY_ENDPOINT.parse()?;
+        // let relay_url = RELAY_ENDPOINT.parse()?;
 
         let sync_protocol = LogSyncProtocol::new(author_store.clone(), op_store.clone());
         let sync_config = SyncConfiguration::new(sync_protocol)
-            .resync(ResyncConfiguration::new().interval(10).poll_interval(1));
+            .resync(ResyncConfiguration::new().interval(3).poll_interval(1));
 
         let mut new_peers = mdns.subscribe(NETWORK_ID).unwrap();
 
-        {
-            let mut author_store = author_store.clone();
-            tokio::spawn(async move {
-                while let Some(Ok(peer)) = new_peers.next().await {
-                    let pubkey = PublicKey::from_bytes(peer.node_addr.node_id.as_bytes()).unwrap();
-                    if author_store
-                        .authors(&Topic::Inbox(pubkey.clone()))
-                        .await
-                        .map(|authors| !authors.contains(&pubkey))
-                        .unwrap_or(true)
-                    {
-                        println!("*** new peer: {}", pubkey);
-                        author_store
-                            .add_author(Topic::Inbox(pubkey.clone()), pubkey)
-                            .await;
+        if true {
+            let author_store = author_store.clone();
+            let me = public_key.clone();
+            tokio::spawn(
+                async move {
+                    while let Some(Ok(peer)) = new_peers.next().await {
+                        let pubkey = PK::from_bytes(peer.node_addr.node_id.as_bytes()).unwrap();
+                        if author_store
+                            .authors(&Topic::Inbox(pubkey.clone()))
+                            .await
+                            .map(|authors| !authors.contains(&me))
+                            .unwrap_or(true)
+                        {
+                            tracing::debug!("new peer: {}", pubkey);
+                            author_store
+                                .add_author(Topic::Inbox(pubkey.clone()), me)
+                                .await;
+                        }
                     }
+                    tracing::warn!("new_peers stream ended");
                 }
-                println!("*** new peers stream ended");
-            });
+                .instrument(tracing::Span::current()),
+            );
         }
 
         let network_builder = NetworkBuilder::new(NETWORK_ID)
@@ -134,7 +147,7 @@ impl Node {
             .gossip(GossipConfig {
                 max_message_size: MAX_MESSAGE_SIZE,
             })
-            .relay(relay_url, false, 0)
+            // .relay(relay_url, false, 0)
             .sync(sync_config);
 
         // if config.bootstrap {
@@ -171,16 +184,10 @@ impl Node {
             config,
             private_key,
             friends: Arc::new(RwLock::new(HashMap::new())),
+            notification_tx,
         };
 
         node.initialize_inbox(public_key).await?;
-
-        // TODO: remove, this is jsut a test
-        node.author_operation(
-            public_key.into(),
-            Payload::Invitation(InvitationMessage::Test),
-        )
-        .await?;
 
         // TODO: locally store list of groups and initialize them when the node starts
 
@@ -196,6 +203,7 @@ impl Node {
     }
 
     /// Create a new chat Space, and subscribe to the Topic for this chat.
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn create_group(&self) -> anyhow::Result<(ChatId, ChatNetwork)> {
         let chat_id = ChatId::random();
         let chat = self.initialize_group(chat_id).await?;
@@ -222,7 +230,8 @@ impl Node {
         Ok(groups)
     }
 
-    pub async fn add_member(&self, chat_id: ChatId, pubkey: PublicKey) -> anyhow::Result<()> {
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
+    pub async fn add_member(&self, chat_id: ChatId, pubkey: PK) -> anyhow::Result<()> {
         let ms = self
             .manager
             .space(chat_id)
@@ -268,6 +277,7 @@ impl Node {
     /// "Joining" a chat means subscribing to messages for that chat.
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<ChatNetwork> {
         let chat = self.initialize_group(chat_id).await?;
 
@@ -276,14 +286,11 @@ impl Node {
 
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
         let Some(authors) = self.author_store.authors(&chat_id.into()).await else {
-            println!("*** get_messages: no authors found for {chat_id}");
+            tracing::warn!("get_messages: no authors found for {chat_id}");
             return Ok(vec![]);
         };
 
-        println!(
-            "*** get_messages: authors found for {chat_id}: {:?}",
-            authors
-        );
+        tracing::debug!("get_messages: authors found for {chat_id}: {:?}", authors);
 
         let mut messages = vec![];
 
@@ -295,20 +302,19 @@ impl Node {
         Ok(messages)
     }
 
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn get_messages_from(
         &self,
         chat_id: ChatId,
-        public_key: PublicKey,
+        public_key: PK,
     ) -> anyhow::Result<Vec<ChatMessage>> {
         let log_id = chat_id.into();
         let log = self.op_store.get_log(&public_key, &log_id, None).await?;
 
         let Some(log) = log else {
-            println!("*** get_messages_from: no log found for {public_key} in {chat_id}");
+            tracing::warn!(%public_key, %chat_id, "no log found");
             return Ok(vec![]);
         };
-
-        println!("*** get_messages_from num messages: {}", log.len());
 
         let messages = log
             .into_iter()
@@ -324,6 +330,7 @@ impl Node {
         Ok(messages)
     }
 
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn send_message(&self, chat_id: ChatId, message: ChatMessage) -> anyhow::Result<()> {
         let topic = chat_id.into();
 
@@ -333,14 +340,19 @@ impl Node {
         Ok(())
     }
 
-    pub fn public_key(&self) -> PublicKey {
-        self.private_key.public_key()
+    pub fn public_key(&self) -> PK {
+        self.private_key.public_key().into()
     }
 
-    // Friend management methods
-    pub async fn add_friend(&self, member: Member) -> anyhow::Result<PublicKey> {
-        println!("*** adding friend: {:?}", member);
-        let public_key = PublicKey::try_from(member.id()).expect("actor id is public key");
+    /// Store someone as a friend, and:
+    /// - register their spaces keybundle so we can add them to spaces
+    /// - subscribe to their inbox
+    /// - store them in the friends map
+    /// - send an invitation to them to do the same
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
+    pub async fn add_friend(&self, member: Member) -> anyhow::Result<PK> {
+        tracing::debug!("adding friend: {:?}", member);
+        let public_key = PK::try_from(member.id()).expect("actor id is public key");
 
         // Register the member in the spaces manager
         self.manager
@@ -349,7 +361,7 @@ impl Node {
             .map_err(|e| anyhow!("Failed to register friend: {e:?}"))?;
 
         let network_tx = self
-            .initialize_inbox(PublicKey::try_from(member.id()).expect("actor id is public key"))
+            .initialize_inbox(PK::try_from(member.id()).expect("actor id is public key"))
             .await?;
 
         // Store the friend
@@ -370,12 +382,13 @@ impl Node {
         Ok(public_key)
     }
 
-    pub async fn get_friends(&self) -> anyhow::Result<Vec<PublicKey>> {
+    pub async fn get_friends(&self) -> anyhow::Result<Vec<PK>> {
         let friends = self.friends.read().await;
         Ok(friends.keys().cloned().collect())
     }
 
-    pub async fn remove_friend(&self, public_key: PublicKey) -> anyhow::Result<()> {
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
+    pub async fn remove_friend(&self, public_key: PK) -> anyhow::Result<()> {
         // TODO: shutdown inbox task, etc.
         self.friends.write().await.remove(&public_key);
         Ok(())

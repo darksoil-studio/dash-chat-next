@@ -13,6 +13,7 @@ serde_json = "1"
 anyhow = "1.0.95"
 async-trait = "0.1.85"
 derive_more = { version = "1.0.0", features = ["full"] }
+futures = "0.3"
 # p2panda-core = "0.3.1"
 # p2panda-discovery = { version = "0.3.1", features = ["mdns"] }
 # p2panda-net = "0.3.1"
@@ -41,6 +42,10 @@ tokio-stream = "0.1.17"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 rand = "0.9.2"
+
+[features]
+default = ["testing"]
+testing = []
 
 [patch."https://github.com/p2panda/p2panda.git"]
 p2panda-auth = { path = "/home/michael/gitfork/p2panda/p2panda-auth" }
