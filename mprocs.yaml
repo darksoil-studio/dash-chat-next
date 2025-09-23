@@ -1,4 +1,5 @@
 procs:
-  agent1: sleep 0 && pnpm tauri dev --no-watch --no-dev-server
-  agent2: sleep 1 && pnpm tauri dev --no-watch --no-dev-server
+  agent1: sleep 0 ; pnpm tauri dev --no-watch --no-dev-server
+  agent2: sleep 3 ; pnpm tauri dev --no-watch --no-dev-server
+  agent3: sleep 6 ; pnpm tauri dev --no-watch --no-dev-server
   ui: pnpm dev

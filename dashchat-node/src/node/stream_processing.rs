@@ -3,6 +3,7 @@ use p2panda_core::Operation;
 use p2panda_spaces::{
     group::GroupError, manager::ManagerError, space::SpaceError, types::AuthGroupError,
 };
+use p2panda_stream::operation::IngestError;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::Stream;
@@ -93,10 +94,16 @@ impl Node {
             .filter_map(|result| async {
                 match result {
                     Ok(operation) => Some(operation),
-                    Err(err) => {
-                        tracing::warn!(?err, "ingest operation error");
-                        None
-                    }
+                    Err(err) => match err {
+                        IngestError::Duplicate(hash) => {
+                            tracing::warn!(hash = hash.short(), "ingest: operation already exists");
+                            None
+                        }
+                        err => {
+                            tracing::warn!(?err, "ingest operation error");
+                            None
+                        }
+                    },
                 }
             });
 
@@ -202,14 +209,16 @@ impl Node {
             (Topic::Chat(chat_id), Some(Payload::SpaceControl(space_control))) => {
                 let mut chats = self.chats.write().await;
                 let chat = chats.get_mut(&chat_id).unwrap();
-                match self.manager.process(&space_control).await {
-                    Ok(events) => {
-                        for event in events {
-                            self.process_chat_event(header, chat, event).await?;
+                for msg in space_control {
+                    match self.manager.process(msg).await {
+                        Ok(events) => {
+                            for event in events {
+                                self.process_chat_event(header, chat, event).await?;
+                            }
                         }
-                    }
-                    Err(err) => {
-                        tracing::error!(?err, "space manager process error");
+                        Err(err) => {
+                            tracing::error!(?err, "space manager process error");
+                        }
                     }
                 }
             }

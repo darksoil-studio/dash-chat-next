@@ -62,31 +62,16 @@ async fn test_group_2() {
 
     alice.send_message(chat_id, "Hello".into()).await.unwrap();
 
-    alice_rx
-        .watch_for(Duration::from_secs(5), |n| {
-            matches!(
-                n.payload,
-                Payload::SpaceControl(SpaceControlMessage {
-                    spaces_args: SpacesArgs::Application { .. },
-                    ..
-                })
-            )
-        })
-        .await
-        .unwrap();
-
-    bob_rx
-        .watch_for(Duration::from_secs(3), |n| {
-            matches!(
-                n.payload,
-                Payload::SpaceControl(SpaceControlMessage {
-                    spaces_args: SpacesArgs::Application { .. },
-                    ..
-                })
-            )
-        })
-        .await
-        .ok();
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(5),
+        || async {
+            alice.get_messages(chat_id).await.unwrap().len() == 1
+                && bob.get_messages(chat_id).await.unwrap().len() == 1
+        },
+    )
+    .await
+    .unwrap();
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bob_messages = bob.get_messages(chat_id).await.unwrap();
@@ -95,5 +80,99 @@ async fn test_group_2() {
     assert_eq!(
         bob_messages.first().map(|m| m.content.clone()),
         Some("Hello".into())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_group_3() {
+    crate::testing::setup_tracing("dashchat=info");
+
+    let (alice, mut alice_rx) = TestNode::new().await;
+    let (bob, mut bob_rx) = TestNode::new().await;
+    let (carol, mut carol_rx) = TestNode::new().await;
+
+    println!("=== NODES ===");
+    println!("alice:    {:?}", alice.public_key());
+    println!("bob:      {:?}", bob.public_key());
+    println!("carol:    {:?}", carol.public_key());
+
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(10),
+        || async {
+            alice.network.known_peers().await.unwrap().len() == 2
+                && bob.network.known_peers().await.unwrap().len() == 2
+                && carol.network.known_peers().await.unwrap().len() == 2
+        },
+    )
+    .await
+    .unwrap();
+
+    println!("peers see each other");
+
+    // alice -- bob -- carol (bob is the pivot)
+    alice.add_friend(bob.me().await.unwrap()).await.unwrap();
+    bob.add_friend(alice.me().await.unwrap()).await.unwrap();
+    bob.add_friend(carol.me().await.unwrap()).await.unwrap();
+    carol.add_friend(bob.me().await.unwrap()).await.unwrap();
+
+    // undesirable
+    // alice.add_friend(carol.me().await.unwrap()).await.unwrap();
+    // carol.add_friend(alice.me().await.unwrap()).await.unwrap();
+
+    let (chat_id, _) = alice.create_group().await.unwrap();
+    alice.add_member(chat_id, bob.public_key()).await.unwrap();
+
+    // Bob has joined the group via his inbox topic
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(5),
+        || async {
+            bob.get_groups().await.unwrap().contains(&chat_id) && bob.space(chat_id).await.is_ok()
+        },
+    )
+    .await
+    .unwrap();
+
+    alice.send_message(chat_id, "alice".into()).await.unwrap();
+    bob.send_message(chat_id, "bob".into()).await.unwrap();
+
+    bob.add_member(chat_id, carol.public_key()).await.unwrap();
+
+    // Carol has joined the group via her inbox topic
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(5),
+        || async { carol.space(chat_id).await.is_ok() },
+    )
+    .await
+    .unwrap();
+
+    carol.send_message(chat_id, "carol".into()).await.unwrap();
+
+    wait_for(
+        Duration::from_millis(100),
+        Duration::from_secs(15),
+        || async {
+            alice.get_messages(chat_id).await.unwrap().len() == 3
+                && bob.get_messages(chat_id).await.unwrap().len() == 3
+                && carol.get_messages(chat_id).await.unwrap().len() == 3
+        },
+    )
+    .await
+    .ok();
+
+    let alice_messages = alice.get_messages(chat_id).await.unwrap();
+    let bob_messages = bob.get_messages(chat_id).await.unwrap();
+    let carol_messages = carol.get_messages(chat_id).await.unwrap();
+
+    assert_eq!(alice_messages, bob_messages);
+    assert_eq!(bob_messages, carol_messages);
+    assert_eq!(
+        alice_messages
+            .into_iter()
+            .map(|m| m.content.clone())
+            .collect::<Vec<_>>(),
+        vec!["alice".into(), "bob".into(), "carol".into()]
     );
 }

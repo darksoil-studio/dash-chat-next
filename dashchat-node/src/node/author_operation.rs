@@ -39,9 +39,11 @@ impl Node {
                 // TODO: ask p2panda what's up with this?
                 // XXX: this produces tons of duplicates, but I couldn't make it work any other way!
                 self.process_operation(topic, op).await?;
+
                 // self.notify_payload(&header, &payload).await?;
                 tracing::info!(?topic, hash = hash.short(), "authored operation");
             }
+
             IngestResult::Retry(h, _, _, missing) => {
                 let backlink = h.backlink.as_ref().map(|h| h.short());
                 tracing::warn!(
@@ -51,6 +53,11 @@ impl Node {
                     ?missing,
                     "operation could not be ingested"
                 );
+            }
+
+            IngestResult::Duplicate(op) => {
+                tracing::warn!(?topic, hash = hash.short(), "operation already exists");
+                return Ok(op.header);
             }
         }
 

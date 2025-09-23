@@ -204,10 +204,8 @@ impl Node {
             .await
             .expect("TODO ?");
 
-        for msg in msgs {
-            self.author_operation(chat_id.into(), Payload::SpaceControl(msg))
-                .await?;
-        }
+        self.author_operation(chat_id.into(), Payload::SpaceControl(msgs))
+            .await?;
 
         Ok((chat_id, chat))
     }
@@ -229,12 +227,12 @@ impl Node {
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn add_member(&self, chat_id: ChatId, pubkey: PK) -> anyhow::Result<()> {
-        let ms = self
+        let msgs = self
             .manager
             .space(chat_id)
             .await
             .expect("TODO ?")
-            .unwrap()
+            .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?
             // TODO: we need an access level for only adding but not removing members
             .add(pubkey.into(), Access::manage())
             .await
@@ -246,10 +244,8 @@ impl Node {
         )
         .await?;
 
-        for msg in ms {
-            self.author_operation(chat_id.into(), Payload::SpaceControl(msg))
-                .await?;
-        }
+        self.author_operation(chat_id.into(), Payload::SpaceControl(msgs))
+            .await?;
 
         Ok(())
     }
@@ -258,17 +254,12 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<Vec<(p2panda_spaces::ActorId, Access)>> {
-        let members = self
-            .manager
-            .space(chat_id)
-            .await
-            .expect("TODO ?")
-            .unwrap()
-            .members()
-            .await
-            .expect("TODO ?");
-
-        Ok(members)
+        if let Some(space) = self.manager.space(chat_id).await.expect("TODO ?") {
+            Ok(space.members().await.expect("TODO ?"))
+        } else {
+            tracing::warn!("Chat has no Space: {chat_id}");
+            Ok(vec![])
+        }
     }
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
@@ -302,7 +293,7 @@ impl Node {
         let topic = chat_id.into();
 
         let header = self
-            .author_operation(topic, Payload::SpaceControl(encrypted))
+            .author_operation(topic, Payload::SpaceControl(vec![encrypted]))
             .await?;
 
         Ok(ChatMessage {
