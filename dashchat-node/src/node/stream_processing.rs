@@ -1,9 +1,13 @@
+use futures::StreamExt;
 use p2panda_core::Operation;
+use p2panda_spaces::{
+    group::GroupError, manager::ManagerError, space::SpaceError, types::AuthGroupError,
+};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::Stream;
 
-use crate::{operation::InvitationMessage, spaces::SpacesArgs};
+use crate::{ShortId, operation::InvitationMessage, spaces::SpacesArgs};
 
 use super::*;
 
@@ -55,7 +59,7 @@ impl Node {
         topic: Topic,
     ) -> anyhow::Result<(Sender<ToNetwork>, tokio::sync::oneshot::Receiver<()>)> {
         let (network_tx, network_rx, gossip_ready) = self.network.subscribe(topic.clone()).await?;
-        tracing::info!(?topic, "subscribed to topic");
+        tracing::debug!(?topic, "subscribed to topic");
 
         let stream = ReceiverStream::new(network_rx);
         let stream = stream.filter_map(|event| match event {
@@ -102,78 +106,127 @@ impl Node {
         author_store: AuthorStore<Topic>,
         topic: Topic,
     ) {
+        tracing::debug!(?topic, "spawned stream process loop");
         let node = self.clone();
         let mut stream = Box::pin(stream);
-        task::spawn(async move {
-            tracing::debug!(?topic, "stream process loop started");
-            while let Some(operation) = stream.next().await {
-                // let log_id: Option<LogId> = operation.header.extension();
+        task::spawn(
+            async move {
+                let author_store = author_store.clone();
+                let node = node.clone();
+                tracing::debug!(?topic, "stream process loop started");
+                stream
+                    .map(move |operation| async move {
+                        // let log_id: Option<LogId> = operation.header.extension();
 
-                let Operation { header, body, hash } = operation;
+                        let Operation { header, body, hash } = operation;
 
-                author_store
-                    .add_author(topic.clone(), header.public_key)
+                        author_store.add_author(topic, header.public_key).await;
+
+                        tracing::debug!(?topic, "adding author");
+
+                        let Some(extensions) = &header.extensions else {
+                            tracing::warn!("no extensions");
+                            return Ok(());
+                        };
+
+                        let payload = body.map(|body| Payload::try_from_body(body)).transpose()?;
+
+                        tracing::trace!(?topic, ?payload, "RECEIVED OPERATION");
+
+                        if let Err(err) = node
+                            .process_operation(topic, &header, payload.as_ref())
+                            .await
+                        {
+                            tracing::error!(?topic, ?payload, ?err, "process operation error");
+                        }
+
+                        tracing::info!(?topic, hash = hash.short(), "processed operation");
+
+                        if let Some((notification_tx, payload)) =
+                            node.notification_tx.clone().zip(payload)
+                        {
+                            notification_tx
+                                .send(Notification {
+                                    payload,
+                                    author: header.public_key.into(),
+                                    timestamp: header.timestamp,
+                                })
+                                .await?;
+                        }
+                        anyhow::Ok(())
+                    })
+                    .collect::<Vec<_>>()
                     .await;
+                tracing::warn!(?topic, "ingestion stream ended");
+            }
+            .instrument(tracing::Span::current()),
+        );
+    }
 
-                tracing::debug!(?topic, "adding author");
+    pub async fn process_operation(
+        &self,
+        topic: Topic,
+        header: &Header<Extensions>,
+        payload: Option<&Payload>,
+    ) -> anyhow::Result<()> {
+        // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
+        match (topic, &payload) {
+            (Topic::Chat(chat_id), Some(Payload::SpaceControl(space_control))) => {
+                let mut chats = self.chats.write().await;
+                let chat = chats.get_mut(&chat_id).unwrap();
 
-                let Some(extensions) = header.extensions else {
-                    tracing::warn!("no extensions");
-                    continue;
-                };
-
-                let payload = body.map(|body| Payload::try_from_body(body)).transpose()?;
-
-                tracing::trace!(?topic, ?payload, "RECEIVED OPERATION");
-
-                match &payload {
-                    Some(Payload::SpaceControl(control_message)) => {
-                        // we handle these when getting messages
-
-                        // match control_message.spaces_args {
-                        //     SpacesArgs::SpaceMembership { space_id, .. }
-                        //     | SpacesArgs::SpaceUpdate { space_id, .. }
-                        //     | SpacesArgs::Application { space_id, .. } => {
-                        //         // TODO: maybe close down the chat tasks if we are kicked out?
-                        //     }
-                        //     _ => {}
-                        // }
-                        // node.manager
-                        //     .process(&control_message)
-                        //     .await
-                        //     .expect("TODO ?");
-                    }
-                    Some(Payload::Invitation(invitation)) => {
-                        tracing::debug!(?invitation, "received invitation message");
-                        match invitation {
-                            InvitationMessage::JoinGroup(chat_id) => {
-                                node.join_group(*chat_id).await?;
-                                // TODO: maybe close down the chat tasks if we are kicked out?
+                let events = self.manager.process(&space_control).await.expect("TODO ?");
+                for event in events {
+                    match event {
+                        Event::Application { space_id, data } => {
+                            if Topic::Chat(space_id) != topic {
+                                tracing::warn!(?space_id, "event for wrong topic");
+                                continue;
                             }
-                            InvitationMessage::Friend => {
-                                tracing::debug!(
-                                    "received friend invitation from: {:?}",
-                                    header.public_key
-                                );
+                            let content = match ChatMessageContent::from_bytes(&data) {
+                                Ok(content) => content,
+                                Err(err) => {
+                                    tracing::warn!(?err, "Can't parse chat message");
+                                    continue;
+                                }
+                            };
+
+                            chat.messages.insert(ChatMessage {
+                                content,
+                                author: header.public_key.into(),
+                                timestamp: header.timestamp,
+                            });
+                        }
+                        Event::Removed { space_id } => {
+                            if Topic::Chat(space_id) != topic {
+                                tracing::warn!(?space_id, "event for wrong topic");
+                                continue;
                             }
+
+                            chat.removed = true;
                         }
                     }
-                    None => {}
-                }
-
-                if let Some((notification_tx, payload)) = node.notification_tx.clone().zip(payload)
-                {
-                    notification_tx
-                        .send(Notification {
-                            payload,
-                            author: header.public_key.into(),
-                            timestamp: header.timestamp,
-                        })
-                        .await?;
                 }
             }
-            tracing::warn!("ingestion stream ended");
-            anyhow::Ok(())
-        });
+            (Topic::Inbox(public_key), Some(Payload::Invitation(invitation))) => {
+                if public_key != self.public_key() {
+                    return Ok(());
+                }
+                tracing::debug!(?invitation, "received invitation message");
+                match invitation {
+                    InvitationMessage::JoinGroup(chat_id) => {
+                        self.join_group(*chat_id).await?;
+                        // TODO: maybe close down the chat tasks if we are kicked out?
+                    }
+                    InvitationMessage::Friend => {
+                        tracing::debug!("received friend invitation from: {:?}", header.public_key);
+                    }
+                }
+            }
+            (topic, payload) => {
+                tracing::error!(?topic, ?payload, "unhandled topic/payload");
+            }
+        }
+        Ok(())
     }
 }

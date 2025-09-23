@@ -1,6 +1,7 @@
 use p2panda_core::Operation;
+use p2panda_stream::operation::IngestResult;
 
-use crate::{AsBody, Cbor, operation::Payload};
+use crate::{AsBody, Cbor, ShortId, operation::Payload};
 
 use super::*;
 
@@ -13,11 +14,7 @@ impl Node {
         topic: Topic,
         payload: Payload,
     ) -> Result<Header<Extensions>, anyhow::Error> {
-        let Operation {
-            header,
-            body,
-            hash: _,
-        } = create_operation(
+        let Operation { header, body, hash } = create_operation(
             &self.op_store,
             &self.private_key,
             topic.clone(),
@@ -25,7 +22,7 @@ impl Node {
         )
         .await?;
 
-        p2panda_stream::operation::ingest_operation(
+        let result = p2panda_stream::operation::ingest_operation(
             &mut self.op_store.clone(),
             header.clone(),
             body.clone(),
@@ -35,7 +32,22 @@ impl Node {
         )
         .await?;
 
-        tracing::debug!(?topic, ?payload, "author operation ingested",);
+        match result {
+            IngestResult::Complete(Operation { hash: hash2, .. }) => {
+                assert_eq!(hash, hash2);
+                tracing::info!(?topic, hash = hash.short(), "authored operation");
+            }
+            IngestResult::Retry(h, _, _, missing) => {
+                let backlink = h.backlink.as_ref().map(|h| h.short());
+                tracing::warn!(
+                    ?topic,
+                    hash = hash.short(),
+                    ?backlink,
+                    ?missing,
+                    "operation could not be ingested"
+                );
+            }
+        }
 
         // Do gossip broadcast for newly created operations
         match topic {

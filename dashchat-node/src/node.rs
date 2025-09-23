@@ -83,22 +83,7 @@ impl Node {
         let op_store = MemoryStore::<LogId, Extensions>::new();
         let author_store = AuthorStore::new();
 
-        {
-            let op_store = op_store.clone();
-            tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                    for (pk, seq) in op_store
-                        .get_log_heights(&Topic::Inbox(public_key.clone()))
-                        .await
-                        .unwrap_or_default()
-                    {
-                        tracing::debug!("log height: {pk} -> {seq}");
-                    }
-                }
-            });
-        }
-
+        // TODO: unnecessary
         author_store
             .add_author(Topic::Inbox(public_key.clone()), public_key)
             .await;
@@ -175,12 +160,18 @@ impl Node {
             spaces_store,
             network,
             chats,
-            manager,
+            manager: manager.clone(),
             config,
             private_key,
             friends: Arc::new(RwLock::new(HashMap::new())),
             notification_tx,
         };
+
+        // TODO: this doesn't seem to make a difference
+        manager
+            .register_member(&node.me().await?)
+            .await
+            .expect("TODO ?");
 
         node.initialize_inbox(public_key).await?;
 
@@ -203,7 +194,7 @@ impl Node {
         let chat_id = ChatId::random();
         let chat = self.initialize_group(chat_id).await?;
 
-        let (_, msgs) = self
+        let (_space, msgs) = self
             .manager
             .create_space(
                 chat_id,
@@ -218,6 +209,16 @@ impl Node {
         }
 
         Ok((chat_id, chat))
+    }
+
+    /// "Joining" a chat means subscribing to messages for that chat.
+    /// This needs to be accompanied by being added as a member of the chat Space by an existing member
+    /// -- you're not fully a member until someone adds you.
+    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
+    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<Chat> {
+        let chat = self.initialize_group(chat_id).await?;
+
+        Ok(chat)
     }
 
     pub async fn get_groups(&self) -> anyhow::Result<Vec<ChatId>> {
@@ -269,104 +270,14 @@ impl Node {
         Ok(members)
     }
 
-    /// "Joining" a chat means subscribing to messages for that chat.
-    /// This needs to be accompanied by being added as a member of the chat Space by an existing member
-    /// -- you're not fully a member until someone adds you.
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
-    pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<Chat> {
-        let chat = self.initialize_group(chat_id).await?;
-
-        Ok(chat)
-    }
-
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
-        let Some(authors) = self.author_store.authors(&chat_id.into()).await else {
-            tracing::warn!("get_messages: no authors found for {chat_id}");
-            return Ok(vec![]);
-        };
-
-        tracing::debug!("get_messages: authors found for {chat_id}: {:?}", authors);
-
-        let mut messages = vec![];
-
-        for author in authors {
-            let mut m = self.get_messages_from(chat_id.clone(), author).await?;
-            messages.append(&mut m);
-        }
-
-        Ok(messages)
-    }
-
-    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
-    pub async fn get_messages_from(
-        &self,
-        chat_id: ChatId,
-        public_key: PK,
-    ) -> anyhow::Result<Vec<ChatMessage>> {
-        let mut chats = self.chats.write().await;
+        let chats = self.chats.read().await;
         let chat = chats
-            .get_mut(&chat_id)
+            .get(&chat_id)
             .ok_or_else(|| anyhow!("Chat not found: {chat_id}"))?;
 
-        let from = chat.last_seq_num.get(&public_key).cloned();
-
-        let log_id = chat_id.into();
-        let Some(log) = self.op_store.get_log(&public_key, &log_id, from).await? else {
-            assert!(
-                from.is_none(),
-                "log should be found if it was read from before"
-            );
-            tracing::warn!(%public_key, %chat_id, "no log found");
-            return Ok(vec![]);
-        };
-
-        let mut new_messages = vec![];
-
-        for (header, body) in log {
-            let body = body.ok_or_else(|| anyhow!("No body found"))?;
-            let payload = Payload::try_from_body(body)?;
-            match payload {
-                Payload::SpaceControl(space_control) => {
-                    let events = self
-                        .manager
-                        .process(&space_control)
-                        .await
-                        .expect("TODO ?")
-                        .into_iter()
-                        .flat_map(|e| match e {
-                            Event::Application { space_id, data } => {
-                                if space_id != chat_id {
-                                    return None;
-                                }
-                                let content = ChatMessageContent::from_bytes(&data)
-                                    .ok_or_warn("Can't parse message")?;
-
-                                Some(ChatMessage {
-                                    content,
-                                    author: header.public_key.into(),
-                                    timestamp: header.timestamp,
-                                })
-                            }
-                            Event::Removed { space_id } => {
-                                if space_id == chat_id {
-                                    chat.removed = true;
-                                }
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    new_messages.extend(events);
-                }
-                Payload::Invitation(invitation) => {
-                    tracing::debug!(?invitation, "received invitation message");
-                }
-            }
-        }
-
-        new_messages.sort_by_key(|m| m.timestamp);
-        chat.messages.extend(new_messages);
-
-        Ok(chat.messages.clone())
+        Ok(chat.messages.iter().cloned().collect())
     }
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]

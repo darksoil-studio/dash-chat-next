@@ -17,6 +17,7 @@ pub use node::{Node, NodeConfig, Notification};
 pub use operation::{InvitationMessage, Payload};
 pub use p2panda_core::PrivateKey;
 pub use p2panda_spaces::ActorId;
+pub use spaces::MemberCode;
 
 #[derive(
     Copy,
@@ -76,5 +77,28 @@ pub trait AsBody: Cbor {
 
     fn try_from_body(body: p2panda_core::Body) -> Result<Self, p2panda_core::cbor::DecodeError> {
         Self::from_bytes(body.to_bytes().as_slice())
+    }
+}
+
+pub trait ShortId {
+    const PREFIX: &'static str;
+    fn short(&self) -> String;
+}
+
+impl ShortId for p2panda_core::Hash {
+    const PREFIX: &'static str = "H|";
+    fn short(&self) -> String {
+        let mut s = self.to_hex();
+        s.truncate(8);
+        format!("{}{s}", Self::PREFIX)
+    }
+}
+
+impl ShortId for p2panda_core::PublicKey {
+    const PREFIX: &'static str = "PK|";
+    fn short(&self) -> String {
+        let mut s = self.to_hex();
+        s.truncate(8);
+        s
     }
 }

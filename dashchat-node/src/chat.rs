@@ -3,7 +3,11 @@ pub use message::*;
 
 mod tests;
 
-use std::{collections::HashMap, convert::Infallible, str::FromStr};
+use std::{
+    collections::{BTreeSet, HashMap},
+    convert::Infallible,
+    str::FromStr,
+};
 
 use p2panda_net::ToNetwork;
 use serde::{Deserialize, Serialize};
@@ -16,7 +20,7 @@ pub struct Chat {
     pub(crate) sender: tokio::sync::mpsc::Sender<ToNetwork>,
 
     /// The processed decrypted messages for this chat.
-    pub(crate) messages: Vec<ChatMessage>,
+    pub(crate) messages: BTreeSet<ChatMessage>,
 
     /// The last sequence number processed for each author's log.
     /// Any message beyond this sequence number can be processed and
@@ -31,7 +35,7 @@ impl Chat {
     pub fn new(sender: tokio::sync::mpsc::Sender<ToNetwork>) -> Self {
         Self {
             sender,
-            messages: vec![],
+            messages: BTreeSet::new(),
             last_seq_num: HashMap::new(),
             removed: false,
         }

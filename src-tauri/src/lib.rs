@@ -13,14 +13,6 @@ pub struct ChatOverview {
     pub member_count: usize,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatMessage {
-    pub content: String,
-    pub author: PK,
-    pub timestamp: u64,
-}
-
 #[tauri::command]
 async fn me(node: State<'_, Node>) -> Result<MemberCode, String> {
     let member = node.me().await.map_err(|e| e.to_string())?;
@@ -90,16 +82,8 @@ async fn send_message(
     message: String,
     node: State<'_, Node>,
 ) -> Result<ChatMessage, String> {
-    let message = ChatMessage {
-        content: message,
-        author: node.public_key(),
-        timestamp: SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time from operation system")
-            .as_secs(),
-    };
-    match node.send_message(chat_id, message.clone()).await {
-        Ok(_) => Ok(message),
+    match node.send_message(chat_id, message.into()).await {
+        Ok(message) => Ok(message),
         Err(err) => Err(format!("Error sending message: {err:?}")),
     }
 }

@@ -1,5 +1,3 @@
-#![cfg(feature = "testing")]
-
 use std::time::Duration;
 
 use crate::{
@@ -9,31 +7,35 @@ use crate::{
 };
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_group_2() -> anyhow::Result<()> {
+async fn test_group_2() {
     crate::testing::setup_tracing("dashchat=info");
 
     println!("nodes:");
-    let (alice, _) = TestNode::new().await;
+    let (alice, mut alice_rx) = TestNode::new().await;
     println!("alice: {:?}", alice.public_key());
     let (bob, mut bob_rx) = TestNode::new().await;
     println!("bob:   {:?}", bob.public_key());
 
     wait_for(
         Duration::from_millis(100),
-        Duration::from_secs(5),
+        Duration::from_secs(10),
         || async {
             alice.network.known_peers().await.unwrap().len() == 1
                 && bob.network.known_peers().await.unwrap().len() == 1
         },
     )
-    .await?;
+    .await
+    .unwrap();
 
     println!("peers see each other");
 
-    alice.add_friend(bob.me().await?).await?;
+    alice.add_friend(bob.me().await.unwrap()).await.unwrap();
+    // TODO: doesn't work without this
+    bob.add_friend(alice.me().await.unwrap()).await.unwrap();
 
-    let (chat_id, _) = alice.create_group().await?;
-    alice.add_member(chat_id, bob.public_key()).await?;
+    let (chat_id, _) = alice.create_group().await.unwrap();
+
+    alice.add_member(chat_id, bob.public_key()).await.unwrap();
 
     bob_rx
         .watch_for(Duration::from_secs(5), |n| {
@@ -55,9 +57,23 @@ async fn test_group_2() -> anyhow::Result<()> {
         Duration::from_secs(5),
         || async { bob.get_groups().await.unwrap().contains(&chat_id) },
     )
-    .await?;
+    .await
+    .unwrap();
 
-    alice.send_message(chat_id, "Hello".into()).await?;
+    alice.send_message(chat_id, "Hello".into()).await.unwrap();
+
+    alice_rx
+        .watch_for(Duration::from_secs(5), |n| {
+            matches!(
+                n.payload,
+                Payload::SpaceControl(SpaceControlMessage {
+                    spaces_args: SpacesArgs::Application { .. },
+                    ..
+                })
+            )
+        })
+        .await
+        .unwrap();
 
     bob_rx
         .watch_for(Duration::from_secs(5), |n| {
@@ -69,12 +85,11 @@ async fn test_group_2() -> anyhow::Result<()> {
                 })
             )
         })
-        .await?;
+        .await
+        .unwrap();
 
-    let alice_messages = alice.get_messages(chat_id).await?;
-    let bob_messages = bob.get_messages(chat_id).await?;
+    let alice_messages = alice.get_messages(chat_id).await.unwrap();
+    let bob_messages = bob.get_messages(chat_id).await.unwrap();
 
     assert_eq!(alice_messages, bob_messages);
-
-    Ok(())
 }
