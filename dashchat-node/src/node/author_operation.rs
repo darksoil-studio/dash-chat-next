@@ -33,8 +33,13 @@ impl Node {
         .await?;
 
         match result {
-            IngestResult::Complete(Operation { hash: hash2, .. }) => {
+            IngestResult::Complete(op @ Operation { hash: hash2, .. }) => {
                 assert_eq!(hash, hash2);
+
+                // TODO: ask p2panda what's up with this?
+                // XXX: this produces tons of duplicates, but I couldn't make it work any other way!
+                self.process_operation(topic, op).await?;
+                // self.notify_payload(&header, &payload).await?;
                 tracing::info!(?topic, hash = hash.short(), "authored operation");
             }
             IngestResult::Retry(h, _, _, missing) => {

@@ -61,6 +61,7 @@ pub struct Node {
     pub network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, Chat>>>,
     author_store: AuthorStore<Topic>,
+    // TODO: probably not needed
     spaces_store: SpacesStore,
     manager: DashManager,
     config: NodeConfig,
@@ -117,7 +118,7 @@ impl Node {
                     }
                     tracing::warn!("new_peers stream ended");
                 }
-                .instrument(tracing::Span::current()),
+                .instrument(tracing::info_span!("new_peers_loop")),
             );
         }
 
@@ -214,7 +215,7 @@ impl Node {
     /// "Joining" a chat means subscribing to messages for that chat.
     /// This needs to be accompanied by being added as a member of the chat Space by an existing member
     /// -- you're not fully a member until someone adds you.
-    #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
+    #[tracing::instrument(skip_all, parent = None, fields(me = ?self.public_key()))]
     pub async fn join_group(&self, chat_id: ChatId) -> anyhow::Result<Chat> {
         let chat = self.initialize_group(chat_id).await?;
 

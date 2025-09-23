@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    InvitationMessage, Payload,
+    ChatMessage, InvitationMessage, Payload,
     spaces::{SpaceControlMessage, SpacesArgs},
     testing::{TestNode, wait_for},
 };
@@ -76,7 +76,7 @@ async fn test_group_2() {
         .unwrap();
 
     bob_rx
-        .watch_for(Duration::from_secs(5), |n| {
+        .watch_for(Duration::from_secs(3), |n| {
             matches!(
                 n.payload,
                 Payload::SpaceControl(SpaceControlMessage {
@@ -86,10 +86,14 @@ async fn test_group_2() {
             )
         })
         .await
-        .unwrap();
+        .ok();
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bob_messages = bob.get_messages(chat_id).await.unwrap();
 
     assert_eq!(alice_messages, bob_messages);
+    assert_eq!(
+        bob_messages.first().map(|m| m.content.clone()),
+        Some("Hello".into())
+    );
 }

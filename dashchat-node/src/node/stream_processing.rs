@@ -62,35 +62,41 @@ impl Node {
         tracing::debug!(?topic, "subscribed to topic");
 
         let stream = ReceiverStream::new(network_rx);
-        let stream = stream.filter_map(|event| match event {
-            FromNetwork::GossipMessage { bytes, .. } => match decode_gossip_message(&bytes) {
-                Ok(result) => Some(result),
-                Err(err) => {
-                    tracing::warn!(?err, "decode gossip message error");
-                    None
-                }
-            },
-            FromNetwork::SyncMessage {
-                header, payload, ..
-            } => Some((header, payload)),
+        let stream = stream.filter_map(|event| async {
+            match event {
+                FromNetwork::GossipMessage { bytes, .. } => match decode_gossip_message(&bytes) {
+                    Ok(result) => Some(result),
+                    Err(err) => {
+                        tracing::warn!(?err, "decode gossip message error");
+                        None
+                    }
+                },
+                FromNetwork::SyncMessage {
+                    header, payload, ..
+                } => Some((header, payload)),
+            }
         });
 
         // Decode and ingest the p2panda operations.
         let stream = stream
             .decode()
-            .filter_map(|result| match result {
-                Ok(operation) => Some(operation),
-                Err(err) => {
-                    tracing::warn!(?err, "decode operation error");
-                    None
+            .filter_map(|result| async {
+                match result {
+                    Ok(operation) => Some(operation),
+                    Err(err) => {
+                        tracing::warn!(?err, "decode operation error");
+                        None
+                    }
                 }
             })
             .ingest(self.op_store.clone(), 128)
-            .filter_map(|result| match result {
-                Ok(operation) => Some(operation),
-                Err(err) => {
-                    tracing::warn!(?err, "ingest operation error");
-                    None
+            .filter_map(|result| async {
+                match result {
+                    Ok(operation) => Some(operation),
+                    Err(err) => {
+                        tracing::warn!(?err, "ingest operation error");
+                        None
+                    }
                 }
             });
 
@@ -106,64 +112,86 @@ impl Node {
         author_store: AuthorStore<Topic>,
         topic: Topic,
     ) {
-        tracing::debug!(?topic, "spawned stream process loop");
         let node = self.clone();
         let mut stream = Box::pin(stream);
         task::spawn(
             async move {
-                let author_store = author_store.clone();
                 let node = node.clone();
-                tracing::debug!(?topic, "stream process loop started");
-                stream
-                    .map(move |operation| async move {
-                        // let log_id: Option<LogId> = operation.header.extension();
-
-                        let Operation { header, body, hash } = operation;
-
-                        author_store.add_author(topic, header.public_key).await;
-
-                        tracing::debug!(?topic, "adding author");
-
-                        let Some(extensions) = &header.extensions else {
-                            tracing::warn!("no extensions");
-                            return Ok(());
-                        };
-
-                        let payload = body.map(|body| Payload::try_from_body(body)).transpose()?;
-
-                        tracing::trace!(?topic, ?payload, "RECEIVED OPERATION");
-
-                        if let Err(err) = node
-                            .process_operation(topic, &header, payload.as_ref())
-                            .await
-                        {
-                            tracing::error!(?topic, ?payload, ?err, "process operation error");
+                tracing::info!("stream process loop started");
+                while let Some(operation) = stream.next().await {
+                    let hash = operation.hash;
+                    match node.process_operation(topic, operation).await {
+                        Ok(()) => (),
+                        Err(err) => {
+                            tracing::error!(
+                                ?topic,
+                                hash = hash.short(),
+                                ?err,
+                                "process operation error"
+                            )
                         }
-
-                        tracing::info!(?topic, hash = hash.short(), "processed operation");
-
-                        if let Some((notification_tx, payload)) =
-                            node.notification_tx.clone().zip(payload)
-                        {
-                            notification_tx
-                                .send(Notification {
-                                    payload,
-                                    author: header.public_key.into(),
-                                    timestamp: header.timestamp,
-                                })
-                                .await?;
-                        }
-                        anyhow::Ok(())
-                    })
-                    .collect::<Vec<_>>()
-                    .await;
-                tracing::warn!(?topic, "ingestion stream ended");
+                    }
+                }
+                tracing::warn!("stream process loop ended");
             }
-            .instrument(tracing::Span::current()),
+            .instrument(tracing::info_span!(
+                "stream_process_loop",
+                topic = format!("{:?}", topic)
+            )),
         );
     }
 
     pub async fn process_operation(
+        &self,
+        topic: Topic,
+        operation: Operation<Extensions>,
+    ) -> anyhow::Result<()> {
+        let Operation { header, body, hash } = operation;
+
+        // TODO: is this needed?
+        // author_store.add_author(topic, header.public_key).await;
+        // tracing::debug!(?topic, "adding author");
+
+        // let Some(extensions) = &header.extensions else {
+        //     tracing::warn!("no extensions");
+        //     return Ok(());
+        // };
+
+        let payload = body.map(|body| Payload::try_from_body(body)).transpose()?;
+
+        tracing::trace!(?payload, "RECEIVED OPERATION");
+
+        if let Err(err) = self.process_payload(topic, &header, payload.as_ref()).await {
+            tracing::error!(?payload, ?err, "process operation error");
+        }
+
+        tracing::info!(hash = hash.short(), "processed operation");
+
+        if let Some(payload) = payload.as_ref() {
+            self.notify_payload(&header, payload).await?;
+        }
+
+        anyhow::Ok(())
+    }
+
+    pub async fn notify_payload(
+        &self,
+        header: &Header<Extensions>,
+        payload: &Payload,
+    ) -> anyhow::Result<()> {
+        if let Some((notification_tx, payload)) = self.notification_tx.clone().zip(Some(payload)) {
+            notification_tx
+                .send(Notification {
+                    payload: payload.clone(),
+                    author: header.public_key.into(),
+                    timestamp: header.timestamp,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn process_payload(
         &self,
         topic: Topic,
         header: &Header<Extensions>,
@@ -174,37 +202,14 @@ impl Node {
             (Topic::Chat(chat_id), Some(Payload::SpaceControl(space_control))) => {
                 let mut chats = self.chats.write().await;
                 let chat = chats.get_mut(&chat_id).unwrap();
-
-                let events = self.manager.process(&space_control).await.expect("TODO ?");
-                for event in events {
-                    match event {
-                        Event::Application { space_id, data } => {
-                            if Topic::Chat(space_id) != topic {
-                                tracing::warn!(?space_id, "event for wrong topic");
-                                continue;
-                            }
-                            let content = match ChatMessageContent::from_bytes(&data) {
-                                Ok(content) => content,
-                                Err(err) => {
-                                    tracing::warn!(?err, "Can't parse chat message");
-                                    continue;
-                                }
-                            };
-
-                            chat.messages.insert(ChatMessage {
-                                content,
-                                author: header.public_key.into(),
-                                timestamp: header.timestamp,
-                            });
+                match self.manager.process(&space_control).await {
+                    Ok(events) => {
+                        for event in events {
+                            self.process_chat_event(header, chat, event).await?;
                         }
-                        Event::Removed { space_id } => {
-                            if Topic::Chat(space_id) != topic {
-                                tracing::warn!(?space_id, "event for wrong topic");
-                                continue;
-                            }
-
-                            chat.removed = true;
-                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(?err, "space manager process error");
                     }
                 }
             }
@@ -225,6 +230,29 @@ impl Node {
             }
             (topic, payload) => {
                 tracing::error!(?topic, ?payload, "unhandled topic/payload");
+            }
+        }
+        Ok(())
+    }
+
+    async fn process_chat_event(
+        &self,
+        header: &Header<Extensions>,
+        chat: &mut Chat,
+        event: Event<ChatId>,
+    ) -> anyhow::Result<()> {
+        match event {
+            Event::Application { data, .. } => {
+                let content = ChatMessageContent::from_bytes(&data)?;
+
+                chat.messages.insert(ChatMessage {
+                    content,
+                    author: header.public_key.into(),
+                    timestamp: header.timestamp,
+                });
+            }
+            Event::Removed { .. } => {
+                chat.removed = true;
             }
         }
         Ok(())
