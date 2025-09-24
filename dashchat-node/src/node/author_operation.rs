@@ -38,10 +38,11 @@ impl Node {
 
                 // TODO: ask p2panda what's up with this?
                 // XXX: this produces tons of duplicates, but I couldn't make it work any other way!
-                self.process_operation(topic, op).await?;
+                self.process_operation(topic, op, self.author_store.clone(), true)
+                    .await?;
 
                 // self.notify_payload(&header, &payload).await?;
-                tracing::info!(?topic, hash = hash.short(), "authored operation");
+                tracing::debug!(?topic, hash = hash.short(), "authored operation");
             }
 
             IngestResult::Retry(h, _, _, missing) => {

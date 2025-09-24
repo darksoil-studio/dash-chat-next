@@ -1,20 +1,25 @@
 use std::time::Duration;
 
+use p2panda_net::{Network, NodeAddress};
+
 use crate::{
     ChatMessage, InvitationMessage, Payload,
+    network::Topic,
     spaces::{SpaceControlMessage, SpacesArgs},
     testing::{TestNode, wait_for},
 };
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_2() {
-    crate::testing::setup_tracing("dashchat=info");
+    crate::testing::setup_tracing(TRACING_FILTER);
 
     println!("nodes:");
     let (alice, mut alice_rx) = TestNode::new().await;
     println!("alice: {:?}", alice.public_key());
     let (bob, mut bob_rx) = TestNode::new().await;
     println!("bob:   {:?}", bob.public_key());
+
+    introduce([&alice.network, &bob.network]).await;
 
     wait_for(
         Duration::from_millis(100),
@@ -83,13 +88,17 @@ async fn test_group_2() {
     );
 }
 
+const TRACING_FILTER: &str = "dashchat=info,p2panda_auth=debug";
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_3() {
-    crate::testing::setup_tracing("dashchat=info");
+    crate::testing::setup_tracing(TRACING_FILTER);
 
     let (alice, mut alice_rx) = TestNode::new().await;
     let (bob, mut bob_rx) = TestNode::new().await;
     let (carol, mut carol_rx) = TestNode::new().await;
+
+    introduce([&alice.network, &bob.network, &carol.network]).await;
 
     println!("=== NODES ===");
     println!("alice:    {:?}", alice.public_key());
@@ -175,4 +184,43 @@ async fn test_group_3() {
             .collect::<Vec<_>>(),
         vec!["alice".into(), "bob".into(), "carol".into()]
     );
+}
+
+async fn introduce(networks: impl IntoIterator<Item = &Network<Topic>>) {
+    let networks = networks.into_iter().collect::<Vec<_>>();
+    for m in networks.iter() {
+        for n in networks.iter() {
+            if m.node_id() == n.node_id() {
+                continue;
+            }
+            let m_addr = m.endpoint().node_addr().await.unwrap();
+            let n_addr = n.endpoint().node_addr().await.unwrap();
+
+            m.add_peer(NodeAddress {
+                public_key: p2panda_core::PublicKey::from_bytes(n_addr.node_id.as_bytes())
+                    .expect("already validated public key"),
+                direct_addresses: n_addr
+                    .direct_addresses
+                    .iter()
+                    .map(|addr| addr.to_owned())
+                    .collect(),
+                relay_url: None, // n_addr.relay_url.map(to_relay_url),
+            })
+            .await
+            .unwrap();
+
+            n.add_peer(NodeAddress {
+                public_key: p2panda_core::PublicKey::from_bytes(m_addr.node_id.as_bytes())
+                    .expect("already validated public key"),
+                direct_addresses: m_addr
+                    .direct_addresses
+                    .iter()
+                    .map(|addr| addr.to_owned())
+                    .collect(),
+                relay_url: None, // n_addr.relay_url.map(to_relay_url),
+            })
+            .await
+            .unwrap();
+        }
+    }
 }

@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::Stream;
 
-use crate::{ShortId, operation::InvitationMessage, spaces::SpacesArgs};
+use crate::{
+    ShortId,
+    operation::InvitationMessage,
+    spaces::{ArgType, SpacesArgs},
+};
 
 use super::*;
 
@@ -124,10 +128,13 @@ impl Node {
         task::spawn(
             async move {
                 let node = node.clone();
-                tracing::info!("stream process loop started");
+                tracing::debug!("stream process loop started");
                 while let Some(operation) = stream.next().await {
                     let hash = operation.hash;
-                    match node.process_operation(topic, operation).await {
+                    match node
+                        .process_operation(topic, operation, author_store.clone(), false)
+                        .await
+                    {
                         Ok(()) => (),
                         Err(err) => {
                             tracing::error!(
@@ -152,12 +159,14 @@ impl Node {
         &self,
         topic: Topic,
         operation: Operation<Extensions>,
+        author_store: AuthorStore<Topic>,
+        is_author: bool,
     ) -> anyhow::Result<()> {
         let Operation { header, body, hash } = operation;
 
-        // TODO: is this needed?
-        // author_store.add_author(topic, header.public_key).await;
-        // tracing::debug!(?topic, "adding author");
+        // NOTE: this is very much needed!!
+        author_store.add_author(topic, header.public_key).await;
+        tracing::debug!(?topic, "adding author");
 
         // let Some(extensions) = &header.extensions else {
         //     tracing::warn!("no extensions");
@@ -168,7 +177,10 @@ impl Node {
 
         tracing::trace!(?payload, "RECEIVED OPERATION");
 
-        if let Err(err) = self.process_payload(topic, &header, payload.as_ref()).await {
+        if let Err(err) = self
+            .process_payload(topic, &header, payload.as_ref(), is_author)
+            .await
+        {
             tracing::error!(?payload, ?err, "process operation error");
         }
 
@@ -203,19 +215,47 @@ impl Node {
         topic: Topic,
         header: &Header<Extensions>,
         payload: Option<&Payload>,
+        is_author: bool,
     ) -> anyhow::Result<()> {
         // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
         match (topic, &payload) {
-            (Topic::Chat(chat_id), Some(Payload::SpaceControl(space_control))) => {
+            (Topic::Chat(chat_id), Some(Payload::SpaceControl(msgs))) => {
                 let mut chats = self.chats.write().await;
                 let chat = chats.get_mut(&chat_id).unwrap();
-                for msg in space_control {
+                // tracing::info!(?msgs, "processing space msgs");
+                for msg in msgs {
+                    // While authoring, all message types other than Application
+                    // are already processed
+                    if is_author && msg.arg_type() != ArgType::Application {
+                        tracing::info!("skipping");
+                        continue;
+                    }
+                    tracing::info!(
+                        argtype = ?msg.arg_type(),
+                        ophash = msg.hash.to_hex(),
+                        "processing space msg"
+                    );
                     match self.manager.process(msg).await {
                         Ok(events) => {
                             for event in events {
                                 self.process_chat_event(header, chat, event).await?;
                             }
                         }
+                        Err(ManagerError::Space(SpaceError::AuthGroup(
+                            AuthGroupError::DuplicateOperation(op, id),
+                        )))
+                        | Err(ManagerError::Group(GroupError::AuthGroup(
+                            AuthGroupError::DuplicateOperation(op, id),
+                        ))) => {
+                            let pk = PK::from(id);
+                            tracing::error!(
+                                ophash = op.to_hex(),
+                                ?pk,
+                                // msg = ?msg.spaces_args,
+                                "duplicate space control msg"
+                            );
+                        }
+
                         Err(err) => {
                             tracing::error!(?err, "space manager process error");
                         }
