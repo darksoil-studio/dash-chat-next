@@ -169,10 +169,7 @@ impl Node {
         };
 
         // TODO: this doesn't seem to make a difference
-        manager
-            .register_member(&node.me().await?)
-            .await
-            .expect("TODO ?");
+        manager.register_member(&node.me().await?).await?;
 
         node.initialize_inbox(public_key).await?;
 
@@ -201,8 +198,7 @@ impl Node {
                 chat_id,
                 &[(self.private_key.public_key().into(), Access::manage())],
             )
-            .await
-            .expect("TODO ?");
+            .await?;
 
         self.author_operation(chat_id.into(), Payload::SpaceControl(msgs))
             .await?;
@@ -230,13 +226,11 @@ impl Node {
         let msgs = self
             .manager
             .space(chat_id)
-            .await
-            .expect("TODO ?")
+            .await?
             .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?
             // TODO: we need an access level for only adding but not removing members
             .add(pubkey.into(), Access::manage())
-            .await
-            .expect("TODO ?");
+            .await?;
 
         self.author_operation(
             pubkey.into(),
@@ -254,8 +248,8 @@ impl Node {
         &self,
         chat_id: ChatId,
     ) -> anyhow::Result<Vec<(p2panda_spaces::ActorId, Access)>> {
-        if let Some(space) = self.manager.space(chat_id).await.expect("TODO ?") {
-            Ok(space.members().await.expect("TODO ?"))
+        if let Some(space) = self.manager.space(chat_id).await? {
+            Ok(space.members().await?)
         } else {
             tracing::warn!("Chat has no Space: {chat_id}");
             Ok(vec![])
@@ -281,14 +275,10 @@ impl Node {
         let space = self
             .manager
             .space(chat_id)
-            .await
-            .expect("TODO ?")
+            .await?
             .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?;
 
-        let encrypted = space
-            .publish(&encode_cbor(&message.clone())?)
-            .await
-            .expect("TODO ?");
+        let encrypted = space.publish(&encode_cbor(&message.clone())?).await?;
 
         let topic = chat_id.into();
 
@@ -358,7 +348,7 @@ impl Node {
     }
 
     pub async fn space(&self, chat_id: ChatId) -> anyhow::Result<DashSpace> {
-        let space = self.manager.space(chat_id).await.expect("TODO ?");
+        let space = self.manager.space(chat_id).await?;
         space.ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))
     }
 }

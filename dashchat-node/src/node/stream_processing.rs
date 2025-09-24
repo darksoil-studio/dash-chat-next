@@ -222,7 +222,8 @@ impl Node {
             (Topic::Chat(chat_id), Some(Payload::SpaceControl(msgs))) => {
                 let mut chats = self.chats.write().await;
                 let chat = chats.get_mut(&chat_id).unwrap();
-                // tracing::info!(?msgs, "processing space msgs");
+                let types: Vec<_> = msgs.iter().map(|m| m.arg_type()).collect();
+                tracing::info!(?types, "processing space msgs");
                 for msg in msgs {
                     // While authoring, all message types other than Application
                     // are already processed

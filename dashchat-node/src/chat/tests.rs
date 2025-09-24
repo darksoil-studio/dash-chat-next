@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use p2panda_auth::Access;
 use p2panda_net::{Network, NodeAddress};
 
 use crate::{
@@ -88,7 +89,7 @@ async fn test_group_2() {
     );
 }
 
-const TRACING_FILTER: &str = "dashchat=info,p2panda_auth=debug";
+const TRACING_FILTER: &str = "dashchat=info,p2panda_auth=warn,p2panda_spaces=warn";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_3() {
@@ -126,18 +127,26 @@ async fn test_group_3() {
     carol.add_friend(bob.me().await.unwrap()).await.unwrap();
 
     // undesirable
-    // alice.add_friend(carol.me().await.unwrap()).await.unwrap();
-    // carol.add_friend(alice.me().await.unwrap()).await.unwrap();
+    alice.add_friend(carol.me().await.unwrap()).await.unwrap();
+    carol.add_friend(alice.me().await.unwrap()).await.unwrap();
 
     let (chat_id, _) = alice.create_group().await.unwrap();
     alice.add_member(chat_id, bob.public_key()).await.unwrap();
 
-    // Bob has joined the group via his inbox topic
+    // Bob has joined the group via his inbox topic and is a manager
     wait_for(
         Duration::from_millis(100),
         Duration::from_secs(5),
         || async {
-            bob.get_groups().await.unwrap().contains(&chat_id) && bob.space(chat_id).await.is_ok()
+            if let Ok(space) = bob.space(chat_id).await {
+                space
+                    .members()
+                    .await
+                    .map(|m| m.contains(&(bob.public_key().into(), Access::manage())))
+                    .unwrap_or(false)
+            } else {
+                false
+            }
         },
     )
     .await
@@ -148,11 +157,21 @@ async fn test_group_3() {
 
     bob.add_member(chat_id, carol.public_key()).await.unwrap();
 
-    // Carol has joined the group via her inbox topic
+    // Carol has joined the group via her inbox topic and is a manager
     wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(5),
-        || async { carol.space(chat_id).await.is_ok() },
+        Duration::from_millis(500),
+        Duration::from_secs(10),
+        || async {
+            if let Ok(space) = carol.space(chat_id).await {
+                space
+                    .members()
+                    .await
+                    .map(|m| m.contains(&(carol.public_key().into(), Access::manage())))
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        },
     )
     .await
     .unwrap();
@@ -160,14 +179,31 @@ async fn test_group_3() {
     carol.send_message(chat_id, "carol".into()).await.unwrap();
 
     wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(15),
+        Duration::from_millis(500),
+        Duration::from_secs(10),
         || async {
-            alice.get_messages(chat_id).await.unwrap().len() == 3
-                && bob.get_messages(chat_id).await.unwrap().len() == 3
-                && carol.get_messages(chat_id).await.unwrap().len() == 3
+            futures::future::join_all([&alice, &bob, &carol].iter().map(|n| async {
+                n.space(chat_id)
+                    .await
+                    .unwrap()
+                    .members()
+                    .await
+                    .unwrap()
+                    .len()
+            }))
+            .await
+            .iter()
+            .all(|l| *l == 3)
         },
     )
+    .await
+    .unwrap();
+
+    wait_for(Duration::from_secs(1), Duration::from_secs(30), || async {
+        alice.get_messages(chat_id).await.unwrap().len() == 3
+            && bob.get_messages(chat_id).await.unwrap().len() == 3
+            && carol.get_messages(chat_id).await.unwrap().len() == 3
+    })
     .await
     .ok();
 
