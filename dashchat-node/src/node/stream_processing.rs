@@ -99,10 +99,10 @@ impl Node {
                 match result {
                     Ok(operation) => Some(operation),
                     Err(err) => match err {
-                        IngestError::Duplicate(hash) => {
-                            tracing::warn!(hash = hash.short(), "ingest: operation already exists");
-                            None
-                        }
+                        // IngestError::Duplicate(hash) => {
+                        //     tracing::warn!(hash = hash.short(), "ingest: operation already exists");
+                        //     None
+                        // }
                         err => {
                             tracing::warn!(?err, "ingest operation error");
                             None

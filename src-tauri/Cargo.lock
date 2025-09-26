@@ -4105,7 +4105,6 @@ dependencies = [
  "rand 0.9.2",
  "serde",
  "thiserror 2.0.16",
- "tracing",
 ]
 
 [[package]]
@@ -4201,7 +4200,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.16",
  "tokio",
- "tracing",
 ]
 
 [[package]]

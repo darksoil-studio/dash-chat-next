@@ -54,12 +54,10 @@ impl Node {
                     ?missing,
                     "operation could not be ingested"
                 );
-            }
-
-            IngestResult::Duplicate(op) => {
-                tracing::warn!(?topic, hash = hash.short(), "operation already exists");
-                return Ok(op.header);
-            }
+            } // IngestResult::Duplicate(op) => {
+              //     tracing::warn!(?topic, hash = hash.short(), "operation already exists");
+              //     return Ok(op.header);
+              // }
         }
 
         // Do gossip broadcast for newly created operations
