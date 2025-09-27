@@ -1,5 +1,10 @@
+use std::collections::HashSet;
+
 use p2panda_core::{Hash, Operation};
-use p2panda_spaces::{OperationId, message::SpacesArgs};
+use p2panda_spaces::{
+    OperationId,
+    message::{AuthoredMessage, SpacesArgs},
+};
 use p2panda_stream::operation::IngestResult;
 
 use crate::{AsBody, ShortId, operation::Payload};
@@ -26,41 +31,21 @@ impl Node {
         payload: Payload,
         mut deps: Vec<p2panda_core::Hash>,
     ) -> Result<Header<Extensions>, anyhow::Error> {
-        let space_deps: Vec<OperationId> = match &payload {
-            Payload::SpaceControl(msgs) => msgs
-                .iter()
-                .flat_map(|msg| match &msg.spaces_args {
-                    SpacesArgs::KeyBundle { .. } => vec![],
-                    SpacesArgs::SpaceMembership {
-                        space_dependencies,
-                        auth_message_id,
-                        ..
-                    } => [auth_message_id.clone()]
-                        .into_iter()
-                        .chain(space_dependencies.clone())
-                        .collect(),
-                    SpacesArgs::Auth {
-                        auth_dependencies, ..
-                    } => auth_dependencies.into_iter().cloned().collect::<Vec<_>>(),
-                    SpacesArgs::SpaceUpdate {
-                        space_dependencies, ..
-                    } => space_dependencies.into_iter().cloned().collect::<Vec<_>>(),
-                    SpacesArgs::Application {
-                        space_dependencies, ..
-                    } => space_dependencies.into_iter().cloned().collect::<Vec<_>>(),
-                })
-                .collect(),
-
-            Payload::Invitation(invitation) => {
-                vec![]
+        let mut sd = self.space_dependencies.write().await;
+        let (ids, space_deps): (Vec<OperationId>, Vec<Hash>) = match &payload {
+            Payload::SpaceControl(msgs) => {
+                let ids = msgs.iter().map(|msg| msg.id()).collect();
+                let deps = msgs
+                    .iter()
+                    .flat_map(|msg| msg.dependencies())
+                    .filter_map(|id| sd.get(&id).cloned())
+                    .collect();
+                (ids, deps)
             }
+            Payload::Invitation(_) => (vec![], vec![]),
         };
 
-        deps.extend(
-            space_deps
-                .into_iter()
-                .map(|id| Hash::from_bytes(id.as_bytes().clone())),
-        );
+        deps.extend(space_deps.into_iter());
 
         let Operation { header, body, hash } = create_operation(
             &self.op_store,
@@ -70,6 +55,10 @@ impl Node {
             deps,
         )
         .await?;
+
+        for id in ids {
+            sd.insert(id, hash);
+        }
 
         let result = p2panda_stream::operation::ingest_operation(
             &mut self.op_store.clone(),

@@ -16,6 +16,7 @@ use p2panda_net::config::GossipConfig;
 use p2panda_net::{
     FromNetwork, Network, NetworkBuilder, ResyncConfiguration, SyncConfiguration, ToNetwork,
 };
+use p2panda_spaces::OperationId;
 use p2panda_spaces::event::Event;
 use p2panda_spaces::member::Member;
 use p2panda_store::{LogStore, MemoryStore};
@@ -64,9 +65,9 @@ pub struct Node {
     /// Used solely to extract the keybundle
     spaces_store: SpacesStore,
     manager: DashManager,
-    /// TODO: because space ordering is not complete, we need to store the dependencies here
-    ///       to be included in the header for syncing
-    space_dependencies: Arc<RwLock<HashMap<ChatId, Vec<p2panda_core::Hash>>>>,
+    /// mapping from space operations to header hashes, so that dependencies
+    /// can be declared
+    space_dependencies: Arc<RwLock<HashMap<OperationId, p2panda_core::Hash>>>,
     config: NodeConfig,
     private_key: PrivateKey,
     friends: Arc<RwLock<HashMap<PK, Friend>>>,
@@ -202,15 +203,9 @@ impl Node {
             )
             .await?;
 
-        {
-            let mut sd = self.space_dependencies.write().await;
-
-            let header = self
-                .author_operation(chat_id.into(), Payload::SpaceControl(msgs))
-                .await?;
-
-            sd.insert(chat_id, vec![header.hash()]);
-        }
+        let header = self
+            .author_operation(chat_id.into(), Payload::SpaceControl(msgs))
+            .await?;
 
         Ok((chat_id, chat))
     }
@@ -241,21 +236,13 @@ impl Node {
             .add(pubkey.into(), Access::manage())
             .await?;
 
-        let deps = self
-            .space_dependencies
-            .read()
-            .await
-            .get(&chat_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Chat has no Space dependencies: {chat_id}"))?;
-
         self.author_operation(
             pubkey.into(),
             Payload::Invitation(InvitationMessage::JoinGroup(chat_id)),
         )
         .await?;
 
-        self.author_operation_with_deps(chat_id.into(), Payload::SpaceControl(msgs), deps)
+        self.author_operation(chat_id.into(), Payload::SpaceControl(msgs))
             .await?;
 
         Ok(())
@@ -294,14 +281,6 @@ impl Node {
             .space(chat_id)
             .await?
             .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?;
-
-        let deps = self
-            .space_dependencies
-            .read()
-            .await
-            .get(&chat_id)
-            .cloned()
-            .ok_or_else(|| anyhow!("Chat has no Space dependencies: {chat_id}"))?;
 
         let encrypted = space.publish(&encode_cbor(&message.clone())?).await?;
 

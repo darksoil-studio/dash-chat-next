@@ -42,6 +42,29 @@ impl SpaceControlMessage {
         })
     }
 
+    pub fn dependencies(&self) -> Vec<OperationId> {
+        match &self.spaces_args {
+            SpacesArgs::KeyBundle { .. } => vec![],
+            SpacesArgs::SpaceMembership {
+                space_dependencies,
+                auth_message_id,
+                ..
+            } => [auth_message_id.clone()]
+                .into_iter()
+                .chain(space_dependencies.clone())
+                .collect(),
+            SpacesArgs::Auth {
+                auth_dependencies, ..
+            } => auth_dependencies.into_iter().cloned().collect::<Vec<_>>(),
+            SpacesArgs::SpaceUpdate {
+                space_dependencies, ..
+            } => space_dependencies.into_iter().cloned().collect::<Vec<_>>(),
+            SpacesArgs::Application {
+                space_dependencies, ..
+            } => space_dependencies.into_iter().cloned().collect::<Vec<_>>(),
+        }
+    }
+
     pub fn arg_type(&self) -> ArgType {
         match &self.spaces_args {
             p2panda_spaces::message::SpacesArgs::KeyBundle {} => ArgType::KeyBundle,

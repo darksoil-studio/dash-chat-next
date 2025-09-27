@@ -220,21 +220,6 @@ impl Node {
         // TODO: maybe have different loops for the different kinds of topics and the different payloads in each
         match (topic, &payload) {
             (Topic::Chat(chat_id), Some(Payload::SpaceControl(msgs))) => {
-                if !header.previous.is_empty() {
-                    if let Some(existing) = self
-                        .space_dependencies
-                        .write()
-                        .await
-                        .insert(chat_id, header.previous.clone())
-                    {
-                        tracing::warn!(
-                            ?existing,
-                            "space dependencies already exist for chat: {:?}",
-                            chat_id
-                        );
-                        assert_eq!(existing, header.previous);
-                    }
-                }
                 let mut chats = self.chats.write().await;
                 let chat = chats.get_mut(&chat_id).unwrap();
                 let types: Vec<_> = msgs.iter().map(|m| m.arg_type()).collect();
