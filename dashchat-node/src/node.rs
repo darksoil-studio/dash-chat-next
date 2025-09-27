@@ -308,7 +308,7 @@ impl Node {
         let topic = chat_id.into();
 
         let header = self
-            .author_operation_with_deps(topic, Payload::SpaceControl(vec![encrypted]), deps)
+            .author_operation(topic, Payload::SpaceControl(vec![encrypted]))
             .await?;
 
         Ok(ChatMessage {

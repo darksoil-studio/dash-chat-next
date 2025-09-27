@@ -1,7 +1,8 @@
-use p2panda_core::Operation;
+use p2panda_core::{Hash, Operation};
+use p2panda_spaces::{OperationId, message::SpacesArgs};
 use p2panda_stream::operation::IngestResult;
 
-use crate::{AsBody, Cbor, ShortId, operation::Payload};
+use crate::{AsBody, ShortId, operation::Payload};
 
 use super::*;
 
@@ -23,8 +24,44 @@ impl Node {
         &self,
         topic: Topic,
         payload: Payload,
-        deps: Vec<p2panda_core::Hash>,
+        mut deps: Vec<p2panda_core::Hash>,
     ) -> Result<Header<Extensions>, anyhow::Error> {
+        let space_deps: Vec<OperationId> = match &payload {
+            Payload::SpaceControl(msgs) => msgs
+                .iter()
+                .flat_map(|msg| match &msg.spaces_args {
+                    SpacesArgs::KeyBundle { .. } => vec![],
+                    SpacesArgs::SpaceMembership {
+                        space_dependencies,
+                        auth_message_id,
+                        ..
+                    } => [auth_message_id.clone()]
+                        .into_iter()
+                        .chain(space_dependencies.clone())
+                        .collect(),
+                    SpacesArgs::Auth {
+                        auth_dependencies, ..
+                    } => auth_dependencies.into_iter().cloned().collect::<Vec<_>>(),
+                    SpacesArgs::SpaceUpdate {
+                        space_dependencies, ..
+                    } => space_dependencies.into_iter().cloned().collect::<Vec<_>>(),
+                    SpacesArgs::Application {
+                        space_dependencies, ..
+                    } => space_dependencies.into_iter().cloned().collect::<Vec<_>>(),
+                })
+                .collect(),
+
+            Payload::Invitation(invitation) => {
+                vec![]
+            }
+        };
+
+        deps.extend(
+            space_deps
+                .into_iter()
+                .map(|id| Hash::from_bytes(id.as_bytes().clone())),
+        );
+
         let Operation { header, body, hash } = create_operation(
             &self.op_store,
             &self.private_key,
