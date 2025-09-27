@@ -14,11 +14,23 @@ impl Node {
         topic: Topic,
         payload: Payload,
     ) -> Result<Header<Extensions>, anyhow::Error> {
+        self.author_operation_with_deps(topic, payload, vec![])
+            .await
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub(super) async fn author_operation_with_deps(
+        &self,
+        topic: Topic,
+        payload: Payload,
+        deps: Vec<p2panda_core::Hash>,
+    ) -> Result<Header<Extensions>, anyhow::Error> {
         let Operation { header, body, hash } = create_operation(
             &self.op_store,
             &self.private_key,
             topic.clone(),
             payload.clone(),
+            deps,
         )
         .await?;
 
@@ -104,6 +116,7 @@ pub(crate) async fn create_operation(
     private_key: &PrivateKey,
     topic: Topic,
     payload: Payload,
+    deps: Vec<p2panda_core::Hash>,
 ) -> Result<Operation<Extensions>, anyhow::Error> {
     let public_key = private_key.public_key();
     let log_id = topic.clone();
@@ -135,7 +148,7 @@ pub(crate) async fn create_operation(
         timestamp,
         seq_num,
         backlink,
-        previous: vec![],
+        previous: deps,
         extensions: Some(extensions),
     };
     header.sign(private_key);

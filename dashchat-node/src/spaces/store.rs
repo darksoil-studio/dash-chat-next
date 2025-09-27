@@ -2,24 +2,24 @@ use std::{str::FromStr, sync::Arc};
 
 use p2panda_auth::traits::Conditions;
 use p2panda_core::{
-    cbor::{decode_cbor, encode_cbor},
     PrivateKey,
+    cbor::{decode_cbor, encode_cbor},
 };
 use p2panda_encryption::{
+    Rng,
     crypto::x25519::SecretKey,
     key_bundle::{Lifetime, LongTermKeyBundle},
     key_manager::{KeyManager, KeyManagerState},
     key_registry::KeyRegistryState,
     traits::PreKeyManager,
-    Rng,
 };
 use p2panda_spaces::{
+    ActorId, OperationId,
     auth::orderer::AuthOrderer,
     member::Member,
     space::SpaceState,
     store::{AuthStore, KeyStore, MessageStore, SpaceStore},
     types::AuthGroupState,
-    ActorId, OperationId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -137,8 +137,8 @@ where
         self.read().await.has_space(id).await
     }
 
-    async fn spaces(&self) -> Result<Vec<ID>, Self::Error> {
-        self.read().await.spaces().await
+    async fn spaces_ids(&self) -> Result<Vec<ID>, Self::Error> {
+        self.read().await.spaces_ids().await
     }
 
     async fn set_space(&mut self, id: &ID, y: SpaceState<ID, M, C>) -> Result<(), Self::Error> {

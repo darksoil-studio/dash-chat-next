@@ -6,7 +6,7 @@ pub type SpacesArgs = p2panda_spaces::message::SpacesArgs<ChatId, ()>;
 
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpaceControlMessage {
     pub hash: p2panda_core::Hash,
     pub author: p2panda_spaces::ActorId,

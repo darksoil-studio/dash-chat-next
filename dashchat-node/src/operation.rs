@@ -19,7 +19,7 @@ pub enum InvitationMessage {
     Friend,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Payload {
     SpaceControl(Vec<SpaceControlMessage>),
     Invitation(InvitationMessage),

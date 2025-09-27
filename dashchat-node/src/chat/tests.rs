@@ -45,14 +45,17 @@ async fn test_group_2() {
 
     bob_rx
         .watch_for(Duration::from_secs(5), |n| {
-            n.payload == Payload::Invitation(InvitationMessage::Friend)
+            matches!(n.payload, Payload::Invitation(InvitationMessage::Friend))
         })
         .await
         .unwrap();
 
     bob_rx
         .watch_for(Duration::from_secs(5), |n| {
-            n.payload == Payload::Invitation(InvitationMessage::JoinGroup(chat_id))
+            matches!(
+                n.payload,
+                Payload::Invitation(InvitationMessage::JoinGroup(id)) if id == chat_id
+            )
         })
         .await
         .unwrap();

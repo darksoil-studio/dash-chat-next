@@ -61,9 +61,12 @@ pub struct Node {
     pub network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, Chat>>>,
     author_store: AuthorStore<Topic>,
-    // TODO: probably not needed
+    /// Used solely to extract the keybundle
     spaces_store: SpacesStore,
     manager: DashManager,
+    /// TODO: because space ordering is not complete, we need to store the dependencies here
+    ///       to be included in the header for syncing
+    space_dependencies: Arc<RwLock<HashMap<ChatId, Vec<p2panda_core::Hash>>>>,
     config: NodeConfig,
     private_key: PrivateKey,
     friends: Arc<RwLock<HashMap<PK, Friend>>>,
@@ -142,8 +145,6 @@ impl Node {
         let network = network_builder.build().await.context("spawn p2p network")?;
         let chats = Arc::new(RwLock::new(HashMap::new()));
 
-        // TODO: we probably shouldn't be storing the store across spaces, right?
-        //       this is only for ease of testing
         let spaces_store: SpacesStore =
             crate::spaces::create_test_store(private_key.clone()).into();
 
@@ -162,6 +163,7 @@ impl Node {
             network,
             chats,
             manager: manager.clone(),
+            space_dependencies: Arc::new(RwLock::new(HashMap::new())),
             config,
             private_key,
             friends: Arc::new(RwLock::new(HashMap::new())),
@@ -200,8 +202,15 @@ impl Node {
             )
             .await?;
 
-        self.author_operation(chat_id.into(), Payload::SpaceControl(msgs))
-            .await?;
+        {
+            let mut sd = self.space_dependencies.write().await;
+
+            let header = self
+                .author_operation(chat_id.into(), Payload::SpaceControl(msgs))
+                .await?;
+
+            sd.insert(chat_id, vec![header.hash()]);
+        }
 
         Ok((chat_id, chat))
     }
@@ -232,13 +241,21 @@ impl Node {
             .add(pubkey.into(), Access::manage())
             .await?;
 
+        let deps = self
+            .space_dependencies
+            .read()
+            .await
+            .get(&chat_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Chat has no Space dependencies: {chat_id}"))?;
+
         self.author_operation(
             pubkey.into(),
             Payload::Invitation(InvitationMessage::JoinGroup(chat_id)),
         )
         .await?;
 
-        self.author_operation(chat_id.into(), Payload::SpaceControl(msgs))
+        self.author_operation_with_deps(chat_id.into(), Payload::SpaceControl(msgs), deps)
             .await?;
 
         Ok(())
@@ -278,12 +295,20 @@ impl Node {
             .await?
             .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?;
 
+        let deps = self
+            .space_dependencies
+            .read()
+            .await
+            .get(&chat_id)
+            .cloned()
+            .ok_or_else(|| anyhow!("Chat has no Space dependencies: {chat_id}"))?;
+
         let encrypted = space.publish(&encode_cbor(&message.clone())?).await?;
 
         let topic = chat_id.into();
 
         let header = self
-            .author_operation(topic, Payload::SpaceControl(vec![encrypted]))
+            .author_operation_with_deps(topic, Payload::SpaceControl(vec![encrypted]), deps)
             .await?;
 
         Ok(ChatMessage {
