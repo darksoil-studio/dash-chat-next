@@ -166,15 +166,21 @@ impl Node {
         let Operation { header, body, hash } = operation;
 
         // NOTE: this is very much needed!!
+        // TODO: this eventually needs to be more selective than just adding any old author
         author_store.add_author(topic, header.public_key).await;
         tracing::debug!(?topic, "adding author");
 
-        // let Some(extensions) = &header.extensions else {
-        //     tracing::warn!("no extensions");
-        //     return Ok(());
-        // };
-
         let payload = body.map(|body| Payload::try_from_body(body)).transpose()?;
+
+        match payload.as_ref() {
+            Some(Payload::SpaceControl(msgs)) => {
+                let mut sd = self.space_dependencies.write().await;
+                for msg in msgs {
+                    sd.insert(msg.id(), hash.clone());
+                }
+            }
+            _ => {}
+        }
 
         tracing::trace!(?payload, "RECEIVED OPERATION");
 
@@ -234,6 +240,7 @@ impl Node {
                     tracing::info!(
                         argtype = ?msg.arg_type(),
                         opid = msg.id().short(),
+                        batch = ?msgs.iter().map(|m| m.id().short()).collect::<Vec<_>>(),
                         "processing space msg"
                     );
                     match self.manager.process(msg).await {
@@ -243,12 +250,12 @@ impl Node {
                             }
                         }
                         Err(ManagerError::Space(SpaceError::AuthGroup(
-                            AuthGroupError::DuplicateOperation(op, id),
+                            AuthGroupError::DuplicateOperation(op, _id),
                         )))
                         | Err(ManagerError::Group(GroupError::AuthGroup(
-                            AuthGroupError::DuplicateOperation(op, id),
+                            AuthGroupError::DuplicateOperation(op, _id),
                         ))) => {
-                            let pk = PK::from(id);
+                            assert_eq!(op, msg.id());
                             tracing::error!(
                                 argtype = ?msg.arg_type(),
                                 opid = op.short(),

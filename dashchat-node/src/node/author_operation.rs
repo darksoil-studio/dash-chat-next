@@ -43,8 +43,8 @@ impl Node {
                             id = msg.id().short(),
                             argtype = ?msg.arg_type(),
                             batch = ?ids.iter().map(|id| id.short()).collect::<Vec<_>>(),
-                            deps = msg.dependencies().len(),
-                            "manual dep check",
+                            deps = ?msg.dependencies().iter().map(|id| id.short()).collect::<Vec<_>>(),
+                            "authoring space msg",
                         );
                         msg.dependencies()
                     })
@@ -81,9 +81,10 @@ impl Node {
         )
         .await?;
 
-        for id in ids {
-            sd.insert(id, hash);
-        }
+        drop(sd);
+        // for id in ids {
+        //     sd.insert(id, hash);
+        // }
 
         let result = p2panda_stream::operation::ingest_operation(
             &mut self.op_store.clone(),
