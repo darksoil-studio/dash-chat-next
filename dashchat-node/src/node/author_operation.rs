@@ -7,6 +7,7 @@ use p2panda_spaces::{
 };
 use p2panda_stream::operation::IngestResult;
 
+use crate::polestar as p;
 use crate::{AsBody, ShortId, operation::Payload};
 
 use super::*;
@@ -74,13 +75,16 @@ impl Node {
             IngestResult::Complete(op @ Operation { hash: hash2, .. }) => {
                 assert_eq!(hash, hash2);
 
-                // TODO: ask p2panda what's up with this?
-                // XXX: this produces tons of duplicates, but I couldn't make it work any other way!
                 self.process_operation(topic, op, self.author_store.clone(), true)
                     .await?;
 
                 // self.notify_payload(&header, &payload).await?;
-                tracing::debug!(?topic, hash = hash.short(), "authored operation");
+                tracing::info!(?topic, hash = hash.short(), "authored operation");
+
+                p::emit(p::Action::AuthorOp {
+                    topic,
+                    hash: hash.clone(),
+                });
             }
 
             IngestResult::Retry(h, _, _, missing) => {

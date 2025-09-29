@@ -1,3 +1,5 @@
+#![feature(bool_to_result)]
+
 mod chat;
 mod forge;
 mod friend;
@@ -6,6 +8,8 @@ mod node;
 mod operation;
 mod spaces;
 mod util;
+
+pub mod polestar;
 
 #[cfg(feature = "testing")]
 pub mod testing;

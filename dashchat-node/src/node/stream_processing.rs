@@ -223,15 +223,14 @@ impl Node {
                 let mut chats = self.chats.write().await;
                 let chat = chats.get_mut(&chat_id).unwrap();
                 let types: Vec<_> = msgs.iter().map(|m| m.arg_type()).collect();
-                tracing::info!(?types, "processing space msgs");
+                tracing::debug!(?types, "processing space msgs");
                 for msg in msgs {
                     // While authoring, all message types other than Application
                     // are already processed
                     if is_author && msg.arg_type() != ArgType::Application {
-                        tracing::info!("skipping");
                         continue;
                     }
-                    tracing::info!(
+                    tracing::debug!(
                         argtype = ?msg.arg_type(),
                         ophash = msg.hash.to_hex(),
                         "processing space msg"

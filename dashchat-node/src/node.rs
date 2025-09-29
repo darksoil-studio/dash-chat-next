@@ -58,7 +58,7 @@ impl Default for NodeConfig {
 
 #[derive(Clone, Debug)]
 pub struct Node {
-    op_store: MemoryStore<LogId, Extensions>,
+    pub(crate) op_store: MemoryStore<LogId, Extensions>,
     pub network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, Chat>>>,
     author_store: AuthorStore<Topic>,
