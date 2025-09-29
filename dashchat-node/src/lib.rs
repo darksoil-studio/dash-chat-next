@@ -21,6 +21,7 @@ pub use node::{Node, NodeConfig, Notification};
 pub use operation::{InvitationMessage, Payload};
 pub use p2panda_core::PrivateKey;
 pub use p2panda_spaces::ActorId;
+use p2panda_spaces::OperationId;
 pub use spaces::MemberCode;
 
 #[derive(
@@ -40,9 +41,7 @@ pub struct PK(p2panda_core::PublicKey);
 
 impl std::fmt::Debug for PK {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut k = self.0.to_string();
-        k.truncate(8);
-        write!(f, "PK|{k}")
+        write!(f, "{}", ShortId::short(&self.0))
     }
 }
 
@@ -103,6 +102,15 @@ impl ShortId for p2panda_core::PublicKey {
     fn short(&self) -> String {
         let mut s = self.to_hex();
         s.truncate(8);
-        s
+        format!("{}{s}", Self::PREFIX)
+    }
+}
+
+impl ShortId for OperationId {
+    const PREFIX: &'static str = "OP|";
+    fn short(&self) -> String {
+        let mut s = self.to_hex();
+        s.truncate(8);
+        format!("{}{s}", Self::PREFIX)
     }
 }

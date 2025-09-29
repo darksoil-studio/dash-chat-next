@@ -2582,6 +2582,7 @@ dependencies = [
  "pin-project",
  "pin-utils",
  "thiserror 2.0.16",
+ "tracing",
 ]
 
 [[package]]

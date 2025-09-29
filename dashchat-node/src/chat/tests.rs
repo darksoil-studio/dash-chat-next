@@ -7,10 +7,13 @@ use crate::{
     ChatMessage, InvitationMessage, Payload,
     network::Topic,
     spaces::{SpaceControlMessage, SpacesArgs},
-    testing::{TestNode, introduce, introduce_and_wait, wait_for},
+    testing::{
+        ClusterConfig, TestCluster, TestNode, consistency, introduce, introduce_and_wait, wait_for,
+    },
 };
 
-const TRACING_FILTER: &str = "dashchat=info,p2panda_auth=warn,p2panda_spaces=warn";
+const TRACING_FILTER: &str =
+    "dashchat=info,p2panda_stream=info,p2panda_auth=warn,p2panda_spaces=warn";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_group_2() {
@@ -90,11 +93,10 @@ async fn test_group_2() {
 async fn test_group_3() {
     crate::testing::setup_tracing(TRACING_FILTER);
 
-    let (alice, mut alice_rx) = TestNode::new().await;
-    let (bob, mut bob_rx) = TestNode::new().await;
-    let (carol, mut carol_rx) = TestNode::new().await;
+    let cluster = TestCluster::new(ClusterConfig::default()).await;
+    let [alice, bob, carol] = cluster.nodes().await;
 
-    introduce([&alice.network, &bob.network, &carol.network]).await;
+    introduce_and_wait([&alice.network, &bob.network, &carol.network]).await;
 
     println!("=== NODES ===");
     println!("alice:    {:?}", alice.public_key());
@@ -126,13 +128,15 @@ async fn test_group_3() {
     alice.add_friend(carol.me().await.unwrap()).await.unwrap();
     carol.add_friend(alice.me().await.unwrap()).await.unwrap();
 
+    println!("==> alice creates group");
     let (chat_id, _) = alice.create_group().await.unwrap();
+    println!("==> alice adds bob");
     alice.add_member(chat_id, bob.public_key()).await.unwrap();
 
     // Bob has joined the group via his inbox topic and is a manager
     wait_for(
         Duration::from_millis(100),
-        Duration::from_secs(5),
+        Duration::from_secs(10),
         || async {
             if let Ok(space) = bob.space(chat_id).await {
                 space
@@ -149,9 +153,15 @@ async fn test_group_3() {
     .await
     .unwrap();
 
+    println!("==> alice sends message");
     alice.send_message(chat_id, "alice".into()).await.unwrap();
+
+    consistency([&alice, &bob], cluster.config.clone()).await;
+
+    println!("==> bob sends message");
     bob.send_message(chat_id, "bob".into()).await.unwrap();
 
+    println!("==> bob adds carol");
     bob.add_member(chat_id, carol.public_key()).await.unwrap();
 
     // Carol has joined the group via her inbox topic and is a manager
@@ -174,7 +184,10 @@ async fn test_group_3() {
     .await
     .unwrap();
 
+    println!("==> carol sends message");
     carol.send_message(chat_id, "carol".into()).await.unwrap();
+
+    cluster.consistency().await;
 
     wait_for(
         Duration::from_millis(500),

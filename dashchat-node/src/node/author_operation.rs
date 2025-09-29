@@ -35,11 +35,35 @@ impl Node {
         let mut sd = self.space_dependencies.write().await;
         let (ids, space_deps): (Vec<OperationId>, Vec<Hash>) = match &payload {
             Payload::SpaceControl(msgs) => {
-                let ids = msgs.iter().map(|msg| msg.id()).collect();
+                let ids = msgs.iter().map(|msg| msg.id()).collect::<Vec<_>>();
                 let deps = msgs
                     .iter()
-                    .flat_map(|msg| msg.dependencies())
-                    .filter_map(|id| sd.get(&id).cloned())
+                    .flat_map(|msg| {
+                        tracing::info!(
+                            id = msg.id().short(),
+                            argtype = ?msg.arg_type(),
+                            batch = ?ids.iter().map(|id| id.short()).collect::<Vec<_>>(),
+                            deps = msg.dependencies().len(),
+                            "manual dep check",
+                        );
+                        msg.dependencies()
+                    })
+                    .flat_map(|dep| match sd.get(&dep) {
+                        Some(hash) => Some(hash.clone()),
+                        None => {
+                            // If the msg is part of the set being committed, it's ok
+                            if !ids.contains(&dep) {
+                                tracing::error!(
+                                    dep = dep.short(),
+                                    deps = ?sd.keys().map(|k| k.short()).collect::<Vec<_>>(),
+                                    ids = ?ids.iter().map(|id| id.short()).collect::<Vec<_>>(),
+                                    "space dep should have been seen already"
+                                );
+                                panic!("space dep should have been seen already")
+                            }
+                            None
+                        }
+                    })
                     .collect();
                 (ids, deps)
             }
@@ -79,7 +103,7 @@ impl Node {
                     .await?;
 
                 // self.notify_payload(&header, &payload).await?;
-                tracing::info!(?topic, hash = hash.short(), "authored operation");
+                tracing::debug!(?topic, hash = hash.short(), "authored operation");
 
                 p::emit(p::Action::AuthorOp {
                     topic,

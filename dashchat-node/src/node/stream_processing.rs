@@ -1,7 +1,8 @@
 use futures::StreamExt;
 use p2panda_core::Operation;
 use p2panda_spaces::{
-    group::GroupError, manager::ManagerError, space::SpaceError, types::AuthGroupError,
+    group::GroupError, manager::ManagerError, message::AuthoredMessage, space::SpaceError,
+    types::AuthGroupError,
 };
 use p2panda_stream::operation::IngestError;
 use serde::{Deserialize, Serialize};
@@ -184,7 +185,7 @@ impl Node {
             tracing::error!(?payload, ?err, "process operation error");
         }
 
-        tracing::info!(hash = hash.short(), "processed operation");
+        tracing::debug!(hash = hash.short(), "processed operation");
 
         if let Some(payload) = payload.as_ref() {
             self.notify_payload(&header, payload).await?;
@@ -230,9 +231,9 @@ impl Node {
                     if is_author && msg.arg_type() != ArgType::Application {
                         continue;
                     }
-                    tracing::debug!(
+                    tracing::info!(
                         argtype = ?msg.arg_type(),
-                        ophash = msg.hash.to_hex(),
+                        opid = msg.id().short(),
                         "processing space msg"
                     );
                     match self.manager.process(msg).await {
@@ -249,11 +250,14 @@ impl Node {
                         ))) => {
                             let pk = PK::from(id);
                             tracing::error!(
-                                ophash = op.to_hex(),
-                                ?pk,
-                                // msg = ?msg.spaces_args,
+                                argtype = ?msg.arg_type(),
+                                opid = op.short(),
                                 "duplicate space control msg"
                             );
+                        }
+
+                        Err(ManagerError::UnexpectedMessage(op)) => {
+                            tracing::error!(op = op.short(), "space manager unexpected operation");
                         }
 
                         Err(err) => {

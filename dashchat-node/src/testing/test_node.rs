@@ -24,16 +24,26 @@ impl TestNode {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ClusterConfig {
     poll_interval: Duration,
     poll_timeout: Duration,
+}
+
+impl Default for ClusterConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval: Duration::from_millis(100),
+            poll_timeout: Duration::from_secs(10),
+        }
+    }
 }
 
 #[derive(derive_more::Deref)]
 pub struct TestCluster<const N: usize> {
     #[deref]
     nodes: [(TestNode, Watcher<Notification>); N],
-    config: ClusterConfig,
+    pub config: ClusterConfig,
 }
 
 impl<const N: usize> TestCluster<N> {
@@ -63,44 +73,43 @@ impl<const N: usize> TestCluster<N> {
     }
 
     pub async fn consistency(&self) {
-        wait_for(
-            self.config.poll_interval,
-            self.config.poll_timeout,
-            || async {
-                let sets = self
-                    .nodes()
-                    .await
-                    .iter()
-                    .map(|node| {
-                        node.op_store
-                            .read_store()
-                            .operations
-                            .keys()
-                            .cloned()
-                            .collect::<HashSet<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                let mut diffs = ConsistencyReport::new(sets);
-                for i in 0..diffs.sets.len() {
-                    for j in 0..i {
-                        if i != j && diffs.sets[i] != diffs.sets[j] {
-                            diffs.diffs.insert(
-                                (i, j),
-                                (diffs.sets[i].len() as isize - diffs.sets[j].len() as isize).abs(),
-                            );
-                        }
-                    }
-                }
-                if diffs.diffs.is_empty() {
-                    Ok(())
-                } else {
-                    Err(diffs)
-                }
-            },
-        )
-        .await
-        .unwrap();
+        consistency(self.nodes().await.iter(), self.config.clone()).await;
     }
+}
+
+pub async fn consistency(nodes: impl IntoIterator<Item = &TestNode>, config: ClusterConfig) {
+    let nodes = nodes.into_iter().collect::<Vec<_>>();
+    wait_for(config.poll_interval, config.poll_timeout, || async {
+        let sets = nodes
+            .iter()
+            .map(|node| {
+                node.op_store
+                    .read_store()
+                    .operations
+                    .keys()
+                    .cloned()
+                    .collect::<HashSet<_>>()
+            })
+            .collect::<Vec<_>>();
+        let mut diffs = ConsistencyReport::new(sets);
+        for i in 0..diffs.sets.len() {
+            for j in 0..i {
+                if i != j && diffs.sets[i] != diffs.sets[j] {
+                    diffs.diffs.insert(
+                        (i, j),
+                        (diffs.sets[i].len() as isize - diffs.sets[j].len() as isize).abs(),
+                    );
+                }
+            }
+        }
+        if diffs.diffs.is_empty() {
+            Ok(())
+        } else {
+            Err(diffs)
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[derive(Debug, Clone, Default)]
