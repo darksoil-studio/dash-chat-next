@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "p2panda-tauri-chat",
+  "productName": "p2pandashchat",
   "version": "0.1.0",
-  "identifier": "com.guillem.p2panda-tauri-chat",
+  "identifier": "com.guillem.p2pandashchat",
   "build": {
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5174",
+    "frontendDist": "../build"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "p2panda-tauri-chat",
+        "title": "p2pandashchat",
         "width": 800,
         "height": 600
       }

@@ -1,5 +1,5 @@
 {
-  "name": "p2panda-tauri-chat",
+  "name": "p2pandashchat",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -11,12 +11,17 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@sveltejs/adapter-static": "^3.0.9",
+    "@sveltejs/kit": "^2.42.2",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "mprocs": "^0.7.3"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.0",
     "@tauri-apps/cli": "^2",
-    "vite": "^6.0.3",
-    "typescript": "~5.6.2"
+    "svelte": "^5.39.2",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
   }
 }
