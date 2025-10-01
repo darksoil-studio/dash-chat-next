@@ -14,13 +14,21 @@ pub struct ChatMessage {
 
 impl PartialOrd for ChatMessage {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.timestamp.cmp(&other.timestamp))
+        Some(
+            self.timestamp
+                .cmp(&other.timestamp)
+                .then(self.content.cmp(&other.content))
+                .then(self.author.cmp(&other.author)),
+        )
     }
 }
 
 impl Ord for ChatMessage {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.timestamp.cmp(&other.timestamp)
+        self.timestamp
+            .cmp(&other.timestamp)
+            .then(self.content.cmp(&other.content))
+            .then(self.author.cmp(&other.author))
     }
 }
 

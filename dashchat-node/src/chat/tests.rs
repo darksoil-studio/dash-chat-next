@@ -158,8 +158,22 @@ async fn test_group_3() {
 
     consistency([&alice, &bob], cluster.config.clone()).await;
 
+    assert_eq!(
+        alice.get_messages(chat_id).await.unwrap(),
+        bob.get_messages(chat_id).await.unwrap()
+    );
+    assert_eq!(alice.get_messages(chat_id).await.unwrap().len(), 1);
+
     println!("==> bob sends message");
     bob.send_message(chat_id, "bob".into()).await.unwrap();
+
+    consistency([&alice, &bob], cluster.config.clone()).await;
+
+    assert_eq!(
+        alice.get_messages(chat_id).await.unwrap(),
+        bob.get_messages(chat_id).await.unwrap()
+    );
+    assert_eq!(alice.get_messages(chat_id).await.unwrap().len(), 2);
 
     println!("==> bob adds carol");
     bob.add_member(chat_id, carol.public_key()).await.unwrap();
@@ -187,7 +201,7 @@ async fn test_group_3() {
     println!("==> carol sends message");
     carol.send_message(chat_id, "carol".into()).await.unwrap();
 
-    cluster.consistency().await;
+    consistency([&alice, &bob, &carol], cluster.config.clone()).await;
 
     wait_for(
         Duration::from_millis(500),
@@ -211,16 +225,16 @@ async fn test_group_3() {
     .await
     .unwrap();
 
-    wait_for(Duration::from_secs(1), Duration::from_secs(30), || async {
+    wait_for(Duration::from_secs(1), Duration::from_secs(10), || async {
         let msgs = [
-            alice.get_messages(chat_id).await.unwrap().len(),
-            bob.get_messages(chat_id).await.unwrap().len(),
-            carol.get_messages(chat_id).await.unwrap().len(),
+            alice.get_messages(chat_id).await.unwrap(),
+            bob.get_messages(chat_id).await.unwrap(),
+            carol.get_messages(chat_id).await.unwrap(),
         ];
-        msgs.iter().all(|m| *m == 3).ok_or(msgs)
+        msgs.iter().all(|m| m.len() == 3).ok_or(msgs)
     })
     .await
-    .unwrap();
+    .unwrap_or_else(|e| panic!("{:#?}", e));
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bob_messages = bob.get_messages(chat_id).await.unwrap();

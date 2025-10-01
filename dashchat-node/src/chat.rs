@@ -16,6 +16,8 @@ use crate::PK;
 
 #[derive(Clone, Debug)]
 pub struct Chat {
+    pub(crate) id: ChatId,
+
     /// The gossip overlay sender for this chat.
     pub(crate) sender: tokio::sync::mpsc::Sender<ToNetwork>,
 
@@ -32,8 +34,9 @@ pub struct Chat {
 }
 
 impl Chat {
-    pub fn new(sender: tokio::sync::mpsc::Sender<ToNetwork>) -> Self {
+    pub fn new(id: ChatId, sender: tokio::sync::mpsc::Sender<ToNetwork>) -> Self {
         Self {
+            id,
             sender,
             messages: BTreeSet::new(),
             last_seq_num: HashMap::new(),

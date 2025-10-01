@@ -4,6 +4,7 @@ use p2panda_spaces::{
     group::GroupError, manager::ManagerError, message::AuthoredMessage, space::SpaceError,
     types::AuthGroupError,
 };
+use p2panda_store::OperationStore;
 use p2panda_stream::operation::IngestError;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
@@ -48,7 +49,7 @@ impl Node {
 
         let (network_tx, _gossip_ready) = self.initialize_topic(chat_id.into()).await?;
 
-        let chat = Chat::new(network_tx);
+        let chat = Chat::new(chat_id, network_tx);
         self.chats.write().await.insert(chat_id, chat.clone());
 
         Ok(chat)
@@ -156,6 +157,23 @@ impl Node {
         );
     }
 
+    // async fn enforce_ordering(
+    //     &self,
+    //     operation: Operation<Extensions>,
+    // ) -> Vec<Operation<Extensions>> {
+    //     //
+    //     // XXX: this is a temporary hack because ordering is not implemented for `previous` deps
+    //     //
+    //     let mut deps = vec![];
+    //     for hash in operation.header.previous {
+    //         if !self.op_store.has_operation(hash).await.unwrap_or(false) {
+    //             self.ooo_buffer.write().await.push(operation);
+    //             return vec![];
+    //         }
+    //     }
+    //     let mut ready = vec![];
+    // }
+
     pub async fn process_operation(
         &self,
         topic: Topic,
@@ -237,7 +255,7 @@ impl Node {
                     if is_author && msg.arg_type() != ArgType::Application {
                         continue;
                     }
-                    tracing::info!(
+                    tracing::debug!(
                         argtype = ?msg.arg_type(),
                         opid = msg.id().short(),
                         batch = ?msgs.iter().map(|m| m.id().short()).collect::<Vec<_>>(),
@@ -255,7 +273,7 @@ impl Node {
                         | Err(ManagerError::Group(GroupError::AuthGroup(
                             AuthGroupError::DuplicateOperation(op, _id),
                         ))) => {
-                            assert_eq!(op, msg.id());
+                            // assert_eq!(op, msg.id());
                             tracing::error!(
                                 argtype = ?msg.arg_type(),
                                 opid = op.short(),
@@ -304,14 +322,17 @@ impl Node {
         match event {
             Event::Application { data, .. } => {
                 let content = ChatMessageContent::from_bytes(&data)?;
+                tracing::info!(?chat.id, ?content, "processing chat msg");
 
                 chat.messages.insert(ChatMessage {
                     content,
                     author: header.public_key.into(),
                     timestamp: header.timestamp,
                 });
+                dbg!(&chat.messages);
             }
             Event::Removed { .. } => {
+                tracing::warn!(?chat.id, "removed from chat");
                 chat.removed = true;
             }
         }

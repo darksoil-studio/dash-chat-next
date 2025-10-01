@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use anyhow::{Context, Result, anyhow, bail};
 use p2panda_auth::Access;
 use p2panda_core::cbor::{DecodeError, encode_cbor};
-use p2panda_core::{Body, Header, PrivateKey};
+use p2panda_core::{Body, Header, Operation, PrivateKey};
 use p2panda_discovery::Discovery;
 use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_encryption::Rng;
@@ -72,6 +72,8 @@ pub struct Node {
     private_key: PrivateKey,
     friends: Arc<RwLock<HashMap<PK, Friend>>>,
     notification_tx: Option<mpsc::Sender<Notification>>,
+    // // XXX: temporary hack
+    // ooo_buffer: Arc<RwLock<Vec<Operation<Extensions>>>>,
 }
 
 impl Node {
@@ -262,6 +264,7 @@ impl Node {
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
+        tracing::info!(?chat_id, "getting messages");
         let chats = self.chats.read().await;
         let chat = chats
             .get(&chat_id)
