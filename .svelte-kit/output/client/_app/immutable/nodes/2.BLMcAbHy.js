@@ -1,0 +1,1 @@
+import"../chunks/Bzak7iHL.js";import{i as s}from"../chunks/DKTCnNbX.js";import{p as i,o as r,f as t,c as m,d as n}from"../chunks/D6nPkcoS.js";import{g as d}from"../chunks/CwdQBBZU.js";var e=t('<div class="loading svelte-1uha8ag"><p>Loading...</p></div>');function u(o,a){i(a,!1),r(()=>{d("/groups")}),s();var p=e();m(o,p),n()}export{u as component};

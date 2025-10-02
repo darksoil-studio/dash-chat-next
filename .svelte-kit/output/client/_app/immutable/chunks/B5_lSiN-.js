@@ -1,0 +1,1 @@
+import{a5 as s}from"./D6nPkcoS.js";async function i(e,r={},t){return window.__TAURI_INTERNALS__.invoke(e,r,t)}const p=s([]),u=s([]),f=s([]),m=s(new Map),w=s(""),a=s(""),o=s(!1),n=s(!1);function d(e,r=!1){a.set(e),n.set(r),o.set(!0),setTimeout(()=>{o.set(!1)},3e3)}export{w as a,o as b,n as c,u as f,p as g,i,f as m,m as p,d as s,a as t};

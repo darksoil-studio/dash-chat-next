@@ -1,0 +1,227 @@
+{
+  ".svelte-kit/generated/server/internal.js": {
+    "file": "internal.js",
+    "name": "internal",
+    "src": ".svelte-kit/generated/server/internal.js",
+    "isEntry": true,
+    "imports": [
+      "_internal.js",
+      "_environment.js"
+    ]
+  },
+  "_context.js": {
+    "file": "chunks/context.js",
+    "name": "context"
+  },
+  "_environment.js": {
+    "file": "chunks/environment.js",
+    "name": "environment"
+  },
+  "_exports.js": {
+    "file": "chunks/exports.js",
+    "name": "exports"
+  },
+  "_false.js": {
+    "file": "chunks/false.js",
+    "name": "false"
+  },
+  "_index-server.js": {
+    "file": "chunks/index-server.js",
+    "name": "index-server",
+    "imports": [
+      "_context.js"
+    ]
+  },
+  "_index.js": {
+    "file": "chunks/index.js",
+    "name": "index",
+    "imports": [
+      "_utils2.js",
+      "_context.js"
+    ]
+  },
+  "_index2.js": {
+    "file": "chunks/index2.js",
+    "name": "index",
+    "imports": [
+      "_context.js",
+      "_false.js",
+      "_utils2.js"
+    ]
+  },
+  "_internal.js": {
+    "file": "chunks/internal.js",
+    "name": "internal",
+    "imports": [
+      "_index2.js",
+      "_utils2.js",
+      "_context.js",
+      "_environment.js"
+    ]
+  },
+  "_shared.js": {
+    "file": "chunks/shared.js",
+    "name": "shared",
+    "imports": [
+      "_utils.js"
+    ]
+  },
+  "_state.svelte.js": {
+    "file": "chunks/state.svelte.js",
+    "name": "state.svelte",
+    "imports": [
+      "_utils2.js"
+    ]
+  },
+  "_stores.js": {
+    "file": "chunks/stores.js",
+    "name": "stores",
+    "imports": [
+      "_context.js",
+      "_exports.js",
+      "_utils.js",
+      "_state.svelte.js"
+    ]
+  },
+  "_stores2.js": {
+    "file": "chunks/stores2.js",
+    "name": "stores",
+    "imports": [
+      "_index.js"
+    ]
+  },
+  "_utils.js": {
+    "file": "chunks/utils.js",
+    "name": "utils"
+  },
+  "_utils2.js": {
+    "file": "chunks/utils2.js",
+    "name": "utils"
+  },
+  "node_modules/.pnpm/@sveltejs+kit@2.42.2_@sveltejs+vite-plugin-svelte@6.2.0_svelte@5.39.2_vite@6.3.6__svelte@5.39.2_vite@6.3.6/node_modules/@sveltejs/kit/src/runtime/app/server/remote/index.js": {
+    "file": "remote-entry.js",
+    "name": "remote-entry",
+    "src": "node_modules/.pnpm/@sveltejs+kit@2.42.2_@sveltejs+vite-plugin-svelte@6.2.0_svelte@5.39.2_vite@6.3.6__svelte@5.39.2_vite@6.3.6/node_modules/@sveltejs/kit/src/runtime/app/server/remote/index.js",
+    "isEntry": true,
+    "imports": [
+      "_shared.js",
+      "_utils.js",
+      "_false.js",
+      "_environment.js"
+    ]
+  },
+  "node_modules/.pnpm/@sveltejs+kit@2.42.2_@sveltejs+vite-plugin-svelte@6.2.0_svelte@5.39.2_vite@6.3.6__svelte@5.39.2_vite@6.3.6/node_modules/@sveltejs/kit/src/runtime/components/svelte-5/error.svelte": {
+    "file": "entries/fallbacks/error.svelte.js",
+    "name": "entries/fallbacks/error.svelte",
+    "src": "node_modules/.pnpm/@sveltejs+kit@2.42.2_@sveltejs+vite-plugin-svelte@6.2.0_svelte@5.39.2_vite@6.3.6__svelte@5.39.2_vite@6.3.6/node_modules/@sveltejs/kit/src/runtime/components/svelte-5/error.svelte",
+    "isEntry": true,
+    "imports": [
+      "_context.js",
+      "_state.svelte.js",
+      "_exports.js",
+      "_utils.js",
+      "_index.js"
+    ]
+  },
+  "node_modules/.pnpm/@sveltejs+kit@2.42.2_@sveltejs+vite-plugin-svelte@6.2.0_svelte@5.39.2_vite@6.3.6__svelte@5.39.2_vite@6.3.6/node_modules/@sveltejs/kit/src/runtime/server/index.js": {
+    "file": "index.js",
+    "name": "index",
+    "src": "node_modules/.pnpm/@sveltejs+kit@2.42.2_@sveltejs+vite-plugin-svelte@6.2.0_svelte@5.39.2_vite@6.3.6__svelte@5.39.2_vite@6.3.6/node_modules/@sveltejs/kit/src/runtime/server/index.js",
+    "isEntry": true,
+    "imports": [
+      "_false.js",
+      "_environment.js",
+      "_shared.js",
+      "_exports.js",
+      "_utils.js",
+      "_index.js",
+      "_internal.js"
+    ]
+  },
+  "src/routes/+layout.svelte": {
+    "file": "entries/pages/_layout.svelte.js",
+    "name": "entries/pages/_layout.svelte",
+    "src": "src/routes/+layout.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_stores.js",
+      "_exports.js",
+      "_utils.js",
+      "_context.js",
+      "_state.svelte.js",
+      "_stores2.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_layout.BfcZ9XOJ.css"
+    ]
+  },
+  "src/routes/+layout.ts": {
+    "file": "entries/pages/_layout.ts.js",
+    "name": "entries/pages/_layout.ts",
+    "src": "src/routes/+layout.ts",
+    "isEntry": true
+  },
+  "src/routes/+page.svelte": {
+    "file": "entries/pages/_page.svelte.js",
+    "name": "entries/pages/_page.svelte",
+    "src": "src/routes/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_exports.js",
+      "_utils.js",
+      "_state.svelte.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.B_Pbr2tD.css"
+    ]
+  },
+  "src/routes/chat/[chatId]/+page.svelte": {
+    "file": "entries/pages/chat/_chatId_/_page.svelte.js",
+    "name": "entries/pages/chat/_chatId_/_page.svelte",
+    "src": "src/routes/chat/[chatId]/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_index-server.js",
+      "_stores.js",
+      "_stores2.js",
+      "_context.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.C6xhg4UW.css"
+    ]
+  },
+  "src/routes/friends/+page.svelte": {
+    "file": "entries/pages/friends/_page.svelte.js",
+    "name": "entries/pages/friends/_page.svelte",
+    "src": "src/routes/friends/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_stores2.js",
+      "_context.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.f7Q1XQj0.css"
+    ]
+  },
+  "src/routes/groups/+page.svelte": {
+    "file": "entries/pages/groups/_page.svelte.js",
+    "name": "entries/pages/groups/_page.svelte",
+    "src": "src/routes/groups/+page.svelte",
+    "isEntry": true,
+    "imports": [
+      "_index2.js",
+      "_index-server.js",
+      "_exports.js",
+      "_utils.js",
+      "_context.js",
+      "_state.svelte.js",
+      "_stores2.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.Bqq2R9yI.css"
+    ]
+  }
+}

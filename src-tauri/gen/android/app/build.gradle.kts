@@ -15,10 +15,10 @@ val tauriProperties = Properties().apply {
 
 android {
     compileSdk = 36
-    namespace = "com.guillem.p2panda_tauri_chat"
+    namespace = "studio.darksoil.p2pandashchat"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.guillem.p2panda_tauri_chat"
+        applicationId = "studio.darksoil.p2pandashchat"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

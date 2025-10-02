@@ -1,4 +1,4 @@
-package com.guillem.p2panda_tauri_chat
+package studio.darksoil.p2pandashchat
 
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
