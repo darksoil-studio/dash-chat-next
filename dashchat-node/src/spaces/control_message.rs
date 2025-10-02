@@ -10,6 +10,7 @@ use super::*;
 pub struct SpaceControlMessage {
     pub hash: p2panda_core::Hash,
     pub author: p2panda_spaces::ActorId,
+    pub timestamp: u64,
     pub spaces_args: SpacesArgs,
 }
 
@@ -32,12 +33,14 @@ impl p2panda_spaces::message::SpacesMessage<ChatId, ()> for SpaceControlMessage 
 impl SpaceControlMessage {
     pub fn new(
         author: p2panda_spaces::ActorId,
+        timestamp: u64,
         spaces_args: SpacesArgs,
     ) -> Result<Self, EncodeError> {
         let bytes = encode_cbor(&(author, &spaces_args)).unwrap();
         Ok(Self {
             hash: p2panda_core::Hash::new(bytes),
             author,
+            timestamp,
             spaces_args,
         })
     }

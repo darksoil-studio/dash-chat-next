@@ -114,3 +114,11 @@ impl ShortId for OperationId {
         format!("{}{s}", Self::PREFIX)
     }
 }
+
+pub fn timestamp_now() -> u64 {
+    use std::time::SystemTime;
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("time from operation system")
+        .as_secs()
+}

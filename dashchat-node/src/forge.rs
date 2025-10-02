@@ -3,6 +3,7 @@ use p2panda_core::{PrivateKey, PublicKey};
 use crate::{
     chat::ChatId,
     spaces::{SpaceControlMessage, SpacesArgs},
+    timestamp_now,
 };
 
 #[derive(Clone, Debug)]
@@ -19,7 +20,11 @@ impl p2panda_spaces::forge::Forge<ChatId, SpaceControlMessage, ()> for DashForge
 
     async fn forge(&mut self, args: SpacesArgs) -> Result<SpaceControlMessage, Self::Error> {
         let public_key = self.private_key.public_key();
-        Ok(SpaceControlMessage::new(public_key.into(), args)?)
+        Ok(SpaceControlMessage::new(
+            public_key.into(),
+            timestamp_now(),
+            args,
+        )?)
     }
 
     async fn forge_ephemeral(
@@ -31,6 +36,7 @@ impl p2panda_spaces::forge::Forge<ChatId, SpaceControlMessage, ()> for DashForge
             // TODO: is this ok?
             hash: p2panda_core::Hash::new([0; 32]),
             author: private_key.public_key().into(),
+            timestamp: timestamp_now(),
             spaces_args: args,
         })
     }

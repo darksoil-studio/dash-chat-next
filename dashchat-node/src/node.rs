@@ -37,7 +37,7 @@ use crate::operation::{
 };
 use crate::spaces::{DashManager, DashSpace, SpaceControlMessage, SpacesArgs, SpacesStore};
 use crate::util::ResultExt;
-use crate::{AsBody, Cbor, PK};
+use crate::{AsBody, Cbor, PK, timestamp_now};
 
 pub use stream_processing::Notification;
 
@@ -264,13 +264,17 @@ impl Node {
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
     pub async fn get_messages(&self, chat_id: ChatId) -> anyhow::Result<Vec<ChatMessage>> {
-        tracing::info!(?chat_id, "getting messages");
         let chats = self.chats.read().await;
         let chat = chats
             .get(&chat_id)
             .ok_or_else(|| anyhow!("Chat not found: {chat_id}"))?;
 
-        Ok(chat.messages.iter().cloned().collect())
+        let mut msgs: Vec<ChatMessage> = chat.messages.iter().cloned().collect();
+        let original = msgs.clone();
+        msgs.sort();
+        assert_eq!(msgs, original);
+
+        Ok(msgs)
     }
 
     #[tracing::instrument(skip_all, fields(me = ?self.public_key()))]
@@ -285,19 +289,21 @@ impl Node {
             .await?
             .ok_or_else(|| anyhow!("Chat has no Space: {chat_id}"))?;
 
+        // NOTE: duplication of timestamp and author
+        let message = ChatMessage {
+            content: message,
+            author: self.public_key(),
+            timestamp: timestamp_now(),
+        };
         let encrypted = space.publish(&encode_cbor(&message.clone())?).await?;
 
         let topic = chat_id.into();
 
-        let header = self
+        let _header = self
             .author_operation(topic, Payload::SpaceControl(vec![encrypted]))
             .await?;
 
-        Ok(ChatMessage {
-            content: message,
-            author: header.public_key.into(),
-            timestamp: header.timestamp,
-        })
+        Ok(message)
     }
 
     pub fn public_key(&self) -> PK {

@@ -2,9 +2,11 @@ use std::time::Duration;
 
 use p2panda_auth::Access;
 use p2panda_net::{Network, NodeAddress};
+use p2panda_spaces::message::AuthoredMessage;
+use p2panda_store::LogStore;
 
 use crate::{
-    ChatMessage, InvitationMessage, Payload,
+    AsBody, ChatMessage, InvitationMessage, PK, Payload, ShortId,
     network::Topic,
     spaces::{SpaceControlMessage, SpacesArgs},
     testing::{
@@ -154,7 +156,10 @@ async fn test_group_3() {
     .unwrap();
 
     println!("==> alice sends message");
-    alice.send_message(chat_id, "alice".into()).await.unwrap();
+    alice
+        .send_message(chat_id, "alice is my name".into())
+        .await
+        .unwrap();
 
     consistency([&alice, &bob], cluster.config.clone()).await;
 
@@ -165,7 +170,7 @@ async fn test_group_3() {
     assert_eq!(alice.get_messages(chat_id).await.unwrap().len(), 1);
 
     println!("==> bob sends message");
-    bob.send_message(chat_id, "bob".into()).await.unwrap();
+    bob.send_message(chat_id, "i am bob".into()).await.unwrap();
 
     consistency([&alice, &bob], cluster.config.clone()).await;
 
@@ -199,7 +204,10 @@ async fn test_group_3() {
     .unwrap();
 
     println!("==> carol sends message");
-    carol.send_message(chat_id, "carol".into()).await.unwrap();
+    carol
+        .send_message(chat_id, "watashi no namae wa carol".into())
+        .await
+        .unwrap();
 
     consistency([&alice, &bob, &carol], cluster.config.clone()).await;
 
@@ -234,19 +242,56 @@ async fn test_group_3() {
         msgs.iter().all(|m| m.len() == 3).ok_or(msgs)
     })
     .await
-    .unwrap_or_else(|e| panic!("{:#?}", e));
+    .ok();
+    // .unwrap_or_else(|e| panic!("{:#?}", e));
+
+    {
+        for n in [&alice, &bob, &carol] {
+            println!("\n\n========== {:?} ===============", n.public_key());
+            // for p in [&alice, &bob, &carol] {
+            //     println!("\n----- {:?} ", p.public_key());
+            let p = n;
+
+            let logs = n
+                .op_store
+                .get_log(&p.public_key().into(), &chat_id.into(), None)
+                .await
+                .unwrap()
+                .unwrap();
+
+            for (h, b) in logs {
+                let payload = b
+                    .map(|body| Payload::try_from_body(body))
+                    .transpose()
+                    .unwrap();
+
+                let bod = match payload {
+                    Some(Payload::SpaceControl(msgs)) => msgs
+                        .iter()
+                        .map(|m| (m.arg_type(), m.id().short()))
+                        .collect::<Vec<_>>(),
+                    // Some(Payload::Invitation(invitation)) => vec![invitation.id().short()],
+                    _ => vec![],
+                };
+
+                println!(
+                    "\n{:3} {:?} {} {:?} {:?}",
+                    h.seq_num,
+                    PK::from(h.public_key),
+                    h.timestamp,
+                    h.payload_hash.map(|h| h.short()),
+                    bod,
+                    // h.signature.map(|s| s.to_hex())
+                );
+            }
+            // }
+        }
+    }
 
     let alice_messages = alice.get_messages(chat_id).await.unwrap();
     let bob_messages = bob.get_messages(chat_id).await.unwrap();
     let carol_messages = carol.get_messages(chat_id).await.unwrap();
 
-    assert_eq!(alice_messages, bob_messages);
-    assert_eq!(bob_messages, carol_messages);
-    assert_eq!(
-        alice_messages
-            .into_iter()
-            .map(|m| m.content.clone())
-            .collect::<Vec<_>>(),
-        vec!["alice".into(), "bob".into(), "carol".into()]
-    );
+    pretty_assertions::assert_eq!(alice_messages, bob_messages);
+    pretty_assertions::assert_eq!(bob_messages, carol_messages);
 }

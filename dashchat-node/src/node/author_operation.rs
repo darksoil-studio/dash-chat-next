@@ -7,8 +7,8 @@ use p2panda_spaces::{
 };
 use p2panda_stream::operation::IngestResult;
 
-use crate::polestar as p;
 use crate::{AsBody, ShortId, operation::Payload};
+use crate::{polestar as p, timestamp_now};
 
 use super::*;
 
@@ -39,7 +39,7 @@ impl Node {
                 let deps = msgs
                     .iter()
                     .flat_map(|msg| {
-                        tracing::info!(
+                        tracing::debug!(
                             id = msg.id().short(),
                             argtype = ?msg.arg_type(),
                             batch = ?ids.iter().map(|id| id.short()).collect::<Vec<_>>(),
@@ -82,6 +82,22 @@ impl Node {
         .await?;
 
         drop(sd);
+
+        {
+            let args = match &payload {
+                Payload::SpaceControl(msgs) => {
+                    msgs.iter().map(|m| m.arg_type()).collect::<Vec<_>>()
+                }
+                Payload::Invitation(_) => vec![],
+            };
+            let pk = PK::from(header.public_key);
+            tracing::info!(
+                ?args,
+                ?pk,
+                hash = header.hash().short(),
+                "authored operation"
+            );
+        }
         // for id in ids {
         //     sd.insert(id, hash);
         // }
@@ -190,10 +206,7 @@ pub(crate) async fn create_operation(
         None => (0, None),
     };
 
-    let timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("time from operation system")
-        .as_secs();
+    let timestamp = timestamp_now();
     let mut header = Header {
         version: 1,
         public_key,

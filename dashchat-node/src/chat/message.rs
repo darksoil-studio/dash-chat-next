@@ -12,6 +12,8 @@ pub struct ChatMessage {
     pub timestamp: u64,
 }
 
+impl Cbor for ChatMessage {}
+
 impl PartialOrd for ChatMessage {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(
@@ -42,5 +44,3 @@ impl From<&str> for ChatMessageContent {
         Self(value.to_string())
     }
 }
-
-impl Cbor for ChatMessageContent {}

@@ -263,8 +263,12 @@ impl Node {
                     );
                     match self.manager.process(msg).await {
                         Ok(events) => {
-                            for event in events {
-                                self.process_chat_event(header, chat, event).await?;
+                            for (i, event) in events.into_iter().enumerate() {
+                                // TODO: need to get this from the space message, not the header!
+                                // because the welcome message could be passed from a differetn author
+                                self.process_chat_event(chat, event)
+                                    .instrument(tracing::info_span!("chat event loop", ?i))
+                                    .await?;
                             }
                         }
                         Err(ManagerError::Space(SpaceError::AuthGroup(
@@ -293,6 +297,7 @@ impl Node {
             }
             (Topic::Inbox(public_key), Some(Payload::Invitation(invitation))) => {
                 if public_key != self.public_key() {
+                    // not for me, ignore
                     return Ok(());
                 }
                 tracing::debug!(?invitation, "received invitation message");
@@ -315,21 +320,13 @@ impl Node {
 
     async fn process_chat_event(
         &self,
-        header: &Header<Extensions>,
         chat: &mut Chat,
         event: Event<ChatId>,
     ) -> anyhow::Result<()> {
         match event {
             Event::Application { data, .. } => {
-                let content = ChatMessageContent::from_bytes(&data)?;
-                tracing::info!(?chat.id, ?content, "processing chat msg");
-
-                chat.messages.insert(ChatMessage {
-                    content,
-                    author: header.public_key.into(),
-                    timestamp: header.timestamp,
-                });
-                dbg!(&chat.messages);
+                let message = ChatMessage::from_bytes(&data)?;
+                chat.messages.insert(message);
             }
             Event::Removed { .. } => {
                 tracing::warn!(?chat.id, "removed from chat");
