@@ -4107,6 +4107,7 @@ dependencies = [
 [[package]]
 name = "p2panda-auth"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "petgraph",
  "rand 0.9.2",
@@ -4117,6 +4118,7 @@ dependencies = [
 [[package]]
 name = "p2panda-core"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "blake3",
  "ciborium",
@@ -4131,6 +4133,7 @@ dependencies = [
 [[package]]
 name = "p2panda-discovery"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "anyhow",
  "base32",
@@ -4150,6 +4153,7 @@ dependencies = [
 [[package]]
 name = "p2panda-encryption"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "chacha20poly1305",
  "curve25519-dalek",
@@ -4172,6 +4176,7 @@ dependencies = [
 [[package]]
 name = "p2panda-net"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4198,6 +4203,7 @@ dependencies = [
 [[package]]
 name = "p2panda-spaces"
 version = "0.1.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "p2panda-auth",
  "p2panda-core",
@@ -4212,6 +4218,7 @@ dependencies = [
 [[package]]
 name = "p2panda-store"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "p2panda-core",
  "thiserror 2.0.16",
@@ -4221,6 +4228,7 @@ dependencies = [
 [[package]]
 name = "p2panda-stream"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "ciborium",
  "futures-channel",
@@ -4236,6 +4244,7 @@ dependencies = [
 [[package]]
 name = "p2panda-sync"
 version = "0.4.0"
+source = "git+https://github.com/maackle/p2panda.git?branch=spaces#f67ee6f2ce073a5ca1c1c82c74acc246cb261aed"
 dependencies = [
  "async-trait",
  "futures",
