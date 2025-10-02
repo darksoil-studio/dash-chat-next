@@ -4,8 +4,6 @@ use p2panda_spaces::{
     group::GroupError, manager::ManagerError, message::AuthoredMessage, space::SpaceError,
     types::AuthGroupError,
 };
-use p2panda_store::OperationStore;
-use p2panda_stream::operation::IngestError;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::Stream;
@@ -13,7 +11,7 @@ use tokio_stream::Stream;
 use crate::{
     ShortId,
     operation::InvitationMessage,
-    spaces::{ArgType, SpacesArgs},
+    spaces::ArgType,
 };
 
 use super::*;

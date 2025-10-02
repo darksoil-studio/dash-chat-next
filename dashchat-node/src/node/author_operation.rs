@@ -1,9 +1,8 @@
-use std::collections::HashSet;
 
 use p2panda_core::{Hash, Operation};
 use p2panda_spaces::{
     OperationId,
-    message::{AuthoredMessage, SpacesArgs},
+    message::AuthoredMessage,
 };
 use p2panda_stream::operation::IngestResult;
 
@@ -32,7 +31,7 @@ impl Node {
         payload: Payload,
         mut deps: Vec<p2panda_core::Hash>,
     ) -> Result<Header<Extensions>, anyhow::Error> {
-        let mut sd = self.space_dependencies.write().await;
+        let sd = self.space_dependencies.write().await;
         let (ids, space_deps): (Vec<OperationId>, Vec<Hash>) = match &payload {
             Payload::SpaceControl(msgs) => {
                 let ids = msgs.iter().map(|msg| msg.id()).collect::<Vec<_>>();

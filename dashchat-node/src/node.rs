@@ -3,12 +3,11 @@ mod stream_processing;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::SystemTime;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use p2panda_auth::Access;
-use p2panda_core::cbor::{DecodeError, encode_cbor};
-use p2panda_core::{Body, Header, Operation, PrivateKey};
+use p2panda_core::cbor::encode_cbor;
+use p2panda_core::{Header, PrivateKey};
 use p2panda_discovery::Discovery;
 use p2panda_discovery::mdns::LocalDiscovery;
 use p2panda_encryption::Rng;
@@ -35,8 +34,7 @@ use crate::network::{AuthorStore, LogId, Topic};
 use crate::operation::{
     Extensions, InvitationMessage, Payload, decode_gossip_message, encode_gossip_message,
 };
-use crate::spaces::{DashManager, DashSpace, SpaceControlMessage, SpacesArgs, SpacesStore};
-use crate::util::ResultExt;
+use crate::spaces::{DashManager, DashSpace, SpacesStore};
 use crate::{AsBody, Cbor, PK, timestamp_now};
 
 pub use stream_processing::Notification;

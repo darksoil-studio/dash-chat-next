@@ -1,5 +1,4 @@
 use p2panda_net::ToNetwork;
-use p2panda_spaces::member::Member;
 
 #[derive(Clone, Debug)]
 pub struct Friend {
