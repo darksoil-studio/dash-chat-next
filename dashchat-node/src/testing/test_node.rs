@@ -1,12 +1,12 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     time::{Duration, Instant},
 };
 
 use p2panda_core::PrivateKey;
 use tokio::sync::mpsc::Receiver;
 
-use crate::{NodeConfig, Notification, node::Node, testing::introduce};
+use crate::{NodeConfig, Notification, ShortId, network::Topic, node::Node, testing::introduce};
 
 #[derive(Debug, Clone, derive_more::Deref)]
 pub struct TestNode(Node);
@@ -26,8 +26,8 @@ impl TestNode {
 
 #[derive(Clone, Debug)]
 pub struct ClusterConfig {
-    poll_interval: Duration,
-    poll_timeout: Duration,
+    pub poll_interval: Duration,
+    pub poll_timeout: Duration,
 }
 
 impl Default for ClusterConfig {
@@ -72,12 +72,20 @@ impl<const N: usize> TestCluster<N> {
             .unwrap()
     }
 
-    pub async fn consistency(&self) {
-        consistency(self.nodes().await.iter(), self.config.clone()).await;
+    pub async fn consistency(
+        &self,
+        topics: impl IntoIterator<Item = &Topic>,
+    ) -> anyhow::Result<()> {
+        consistency(self.nodes().await.iter(), topics, &self.config).await
     }
 }
 
-pub async fn consistency(nodes: impl IntoIterator<Item = &TestNode>, config: ClusterConfig) {
+pub async fn consistency(
+    nodes: impl IntoIterator<Item = &TestNode>,
+    topics: impl IntoIterator<Item = &Topic>,
+    config: &ClusterConfig,
+) -> anyhow::Result<()> {
+    let topics = topics.into_iter().collect::<HashSet<_>>();
     let nodes = nodes.into_iter().collect::<Vec<_>>();
     wait_for(config.poll_interval, config.poll_timeout, || async {
         let sets = nodes
@@ -86,9 +94,15 @@ pub async fn consistency(nodes: impl IntoIterator<Item = &TestNode>, config: Clu
                 node.op_store
                     .read_store()
                     .operations
-                    .keys()
-                    .cloned()
-                    .collect::<HashSet<_>>()
+                    .iter()
+                    .filter_map(|(h, (t, _, _, _))| {
+                        if topics.is_empty() || topics.contains(t) {
+                            Some(h.short())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<BTreeSet<_>>()
             })
             .collect::<Vec<_>>();
         let mut diffs = ConsistencyReport::new(sets);
@@ -109,17 +123,27 @@ pub async fn consistency(nodes: impl IntoIterator<Item = &TestNode>, config: Clu
         }
     })
     .await
-    .unwrap();
+    .map_err(|diffs| {
+        for n in nodes {
+            println!(
+                ">>> {:?}\n{}\n",
+                n.public_key(),
+                n.op_store.report(topics.clone())
+            );
+        }
+        println!("consistency report: {:#?}", diffs);
+        anyhow::anyhow!("consistency check failed")
+    })
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ConsistencyReport {
-    sets: Vec<HashSet<p2panda_core::Hash>>,
+    sets: Vec<BTreeSet<String>>,
     diffs: HashMap<(usize, usize), isize>,
 }
 
 impl ConsistencyReport {
-    pub fn new(sets: Vec<HashSet<p2panda_core::Hash>>) -> Self {
+    pub fn new(sets: Vec<BTreeSet<String>>) -> Self {
         Self {
             sets,
             diffs: HashMap::new(),

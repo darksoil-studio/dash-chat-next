@@ -1,9 +1,5 @@
-
 use p2panda_core::{Hash, Operation};
-use p2panda_spaces::{
-    OperationId,
-    message::AuthoredMessage,
-};
+use p2panda_spaces::{OperationId, message::AuthoredMessage};
 use p2panda_stream::operation::IngestResult;
 
 use crate::{AsBody, ShortId, operation::Payload};
@@ -31,7 +27,7 @@ impl Node {
         payload: Payload,
         mut deps: Vec<p2panda_core::Hash>,
     ) -> Result<Header<Extensions>, anyhow::Error> {
-        let sd = self.space_dependencies.write().await;
+        let mut sd = self.space_dependencies.write().await;
         let (ids, space_deps): (Vec<OperationId>, Vec<Hash>) = match &payload {
             Payload::SpaceControl(msgs) => {
                 let ids = msgs.iter().map(|msg| msg.id()).collect::<Vec<_>>();
@@ -80,6 +76,10 @@ impl Node {
         )
         .await?;
 
+        for id in ids {
+            sd.insert(id, hash);
+        }
+
         drop(sd);
 
         {
@@ -97,12 +97,9 @@ impl Node {
                 "authored operation"
             );
         }
-        // for id in ids {
-        //     sd.insert(id, hash);
-        // }
 
         let result = p2panda_stream::operation::ingest_operation(
-            &mut self.op_store.clone(),
+            &mut *self.op_store.clone(),
             header.clone(),
             body.clone(),
             header.to_bytes(),

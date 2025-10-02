@@ -1,18 +1,13 @@
 mod message;
 pub use message::*;
 
+#[cfg(test)]
 mod tests;
 
-use std::{
-    collections::{BTreeSet, HashMap},
-    convert::Infallible,
-    str::FromStr,
-};
+use std::{collections::BTreeSet, convert::Infallible, str::FromStr};
 
 use p2panda_net::ToNetwork;
 use serde::{Deserialize, Serialize};
-
-use crate::PK;
 
 #[derive(Clone, Debug)]
 pub struct Chat {
@@ -24,11 +19,6 @@ pub struct Chat {
     /// The processed decrypted messages for this chat.
     pub(crate) messages: BTreeSet<ChatMessage>,
 
-    /// The last sequence number processed for each author's log.
-    /// Any message beyond this sequence number can be processed and
-    /// added to the messages vector.
-    pub(crate) last_seq_num: HashMap<PK, u64>,
-
     /// Whether I have been removed from this chat.
     pub(crate) removed: bool,
 }
@@ -39,13 +29,14 @@ impl Chat {
             id,
             sender,
             messages: BTreeSet::new(),
-            last_seq_num: HashMap::new(),
             removed: false,
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, derive_more::Deref)]
+#[derive(
+    Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, derive_more::Deref,
+)]
 #[serde(into = "String", try_from = "String")]
 pub struct ChatId([u8; 32]);
 
@@ -82,7 +73,7 @@ impl std::fmt::Debug for ChatId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut k = self.to_string();
         k.truncate(8);
-        write!(f, "ChatId|{k}")
+        write!(f, "Ch|{k}")
     }
 }
 

@@ -7,6 +7,7 @@ mod network;
 mod node;
 mod operation;
 mod spaces;
+mod store;
 mod util;
 
 pub mod polestar;
@@ -30,6 +31,8 @@ pub use spaces::MemberCode;
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     serde::Serialize,
     serde::Deserialize,
     derive_more::Display,

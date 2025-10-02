@@ -1,5 +1,10 @@
+use std::time::Duration;
 
+use p2panda_auth::Access;
+use p2panda_spaces::message::AuthoredMessage;
+use p2panda_store::LogStore;
 
+use crate::{testing::*, *};
 
 const TRACING_FILTER: &str =
     "dashchat=info,p2panda_stream=info,p2panda_auth=warn,p2panda_spaces=warn";
@@ -9,7 +14,7 @@ async fn test_group_2() {
     crate::testing::setup_tracing(TRACING_FILTER);
 
     println!("nodes:");
-    let (alice, mut alice_rx) = TestNode::new().await;
+    let (alice, _alice_rx) = TestNode::new().await;
     println!("alice: {:?}", alice.public_key());
     let (bob, mut bob_rx) = TestNode::new().await;
     println!("bob:   {:?}", bob.public_key());
@@ -19,7 +24,6 @@ async fn test_group_2() {
     println!("peers see each other");
 
     alice.add_friend(bob.me().await.unwrap()).await.unwrap();
-    // TODO: doesn't work without this
     bob.add_friend(alice.me().await.unwrap()).await.unwrap();
 
     let (chat_id, _) = alice.create_group().await.unwrap();
@@ -82,7 +86,11 @@ async fn test_group_2() {
 async fn test_group_3() {
     crate::testing::setup_tracing(TRACING_FILTER);
 
-    let cluster = TestCluster::new(ClusterConfig::default()).await;
+    let cfg = ClusterConfig {
+        poll_interval: Duration::from_millis(500),
+        poll_timeout: Duration::from_secs(5),
+    };
+    let cluster = TestCluster::new(cfg.clone()).await;
     let [alice, bob, carol] = cluster.nodes().await;
 
     introduce_and_wait([&alice.network, &bob.network, &carol.network]).await;
@@ -92,30 +100,15 @@ async fn test_group_3() {
     println!("bob:      {:?}", bob.public_key());
     println!("carol:    {:?}", carol.public_key());
 
-    wait_for(
-        Duration::from_millis(100),
-        Duration::from_secs(10),
-        || async {
-            (alice.network.known_peers().await.unwrap().len() == 2
-                && bob.network.known_peers().await.unwrap().len() == 2
-                && carol.network.known_peers().await.unwrap().len() == 2)
-                .ok_or(())
-        },
-    )
-    .await
-    .unwrap();
-
-    println!("peers see each other");
-
     // alice -- bob -- carol (bob is the pivot)
     alice.add_friend(bob.me().await.unwrap()).await.unwrap();
     bob.add_friend(alice.me().await.unwrap()).await.unwrap();
     bob.add_friend(carol.me().await.unwrap()).await.unwrap();
     carol.add_friend(bob.me().await.unwrap()).await.unwrap();
 
-    // undesirable
-    alice.add_friend(carol.me().await.unwrap()).await.unwrap();
-    carol.add_friend(alice.me().await.unwrap()).await.unwrap();
+    // NOTE: not needed! "friendship" is transitive.
+    // alice.add_friend(carol.me().await.unwrap()).await.unwrap();
+    // carol.add_friend(alice.me().await.unwrap()).await.unwrap();
 
     println!("==> alice creates group");
     let (chat_id, _) = alice.create_group().await.unwrap();
@@ -142,13 +135,15 @@ async fn test_group_3() {
     .await
     .unwrap();
 
+    let tt = [chat_id.into()];
+
     println!("==> alice sends message");
     alice
         .send_message(chat_id, "alice is my name".into())
         .await
         .unwrap();
 
-    consistency([&alice, &bob], cluster.config.clone()).await;
+    consistency([&alice, &bob], &tt, &cfg).await.unwrap();
 
     assert_eq!(
         alice.get_messages(chat_id).await.unwrap(),
@@ -159,7 +154,7 @@ async fn test_group_3() {
     println!("==> bob sends message");
     bob.send_message(chat_id, "i am bob".into()).await.unwrap();
 
-    consistency([&alice, &bob], cluster.config.clone()).await;
+    consistency([&alice, &bob], &tt, &cfg).await.unwrap();
 
     assert_eq!(
         alice.get_messages(chat_id).await.unwrap(),
@@ -169,6 +164,10 @@ async fn test_group_3() {
 
     println!("==> bob adds carol");
     bob.add_member(chat_id, carol.public_key()).await.unwrap();
+
+    consistency([&alice, &bob, &carol], &tt, &cfg)
+        .await
+        .unwrap();
 
     // Carol has joined the group via her inbox topic and is a manager
     wait_for(
@@ -196,7 +195,9 @@ async fn test_group_3() {
         .await
         .unwrap();
 
-    consistency([&alice, &bob, &carol], cluster.config.clone()).await;
+    consistency([&alice, &bob, &carol], &tt, &cfg)
+        .await
+        .unwrap();
 
     wait_for(
         Duration::from_millis(500),
@@ -234,44 +235,8 @@ async fn test_group_3() {
 
     {
         for n in [&alice, &bob, &carol] {
-            println!("\n\n========== {:?} ===============", n.public_key());
-            // for p in [&alice, &bob, &carol] {
-            //     println!("\n----- {:?} ", p.public_key());
-            let p = n;
-
-            let logs = n
-                .op_store
-                .get_log(&p.public_key().into(), &chat_id.into(), None)
-                .await
-                .unwrap()
-                .unwrap();
-
-            for (h, b) in logs {
-                let payload = b
-                    .map(|body| Payload::try_from_body(body))
-                    .transpose()
-                    .unwrap();
-
-                let bod = match payload {
-                    Some(Payload::SpaceControl(msgs)) => msgs
-                        .iter()
-                        .map(|m| (m.arg_type(), m.id().short()))
-                        .collect::<Vec<_>>(),
-                    // Some(Payload::Invitation(invitation)) => vec![invitation.id().short()],
-                    _ => vec![],
-                };
-
-                println!(
-                    "\n{:3} {:?} {} {:?} {:?}",
-                    h.seq_num,
-                    PK::from(h.public_key),
-                    h.timestamp,
-                    h.payload_hash.map(|h| h.short()),
-                    bod,
-                    // h.signature.map(|s| s.to_hex())
-                );
-            }
-            // }
+            println!(">>> {:?}\n", n.public_key());
+            println!("{}\n", n.op_store.report(&[]));
         }
     }
 

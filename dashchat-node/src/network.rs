@@ -13,7 +13,19 @@ use p2panda_net::TopicId;
 use p2panda_sync::TopicQuery;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Hash, Eq, PartialEq, derive_more::From)]
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    Serialize,
+    Deserialize,
+    Hash,
+    Eq,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    derive_more::From,
+)]
 pub enum Topic {
     Chat(ChatId),
     Inbox(PK),

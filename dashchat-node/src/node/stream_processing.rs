@@ -8,11 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Sender;
 use tokio_stream::Stream;
 
-use crate::{
-    ShortId,
-    operation::InvitationMessage,
-    spaces::ArgType,
-};
+use crate::{ShortId, operation::InvitationMessage, spaces::ArgType};
 
 use super::*;
 
@@ -228,7 +224,8 @@ impl Node {
                     author: header.public_key.into(),
                     timestamp: header.timestamp,
                 })
-                .await?;
+                .await
+                .unwrap_or_else(|_| tracing::warn!("notification channel closed"));
         }
         Ok(())
     }

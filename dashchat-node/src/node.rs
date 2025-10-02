@@ -35,6 +35,7 @@ use crate::operation::{
     Extensions, InvitationMessage, Payload, decode_gossip_message, encode_gossip_message,
 };
 use crate::spaces::{DashManager, DashSpace, SpacesStore};
+use crate::store::OpStore;
 use crate::{AsBody, Cbor, PK, timestamp_now};
 
 pub use stream_processing::Notification;
@@ -56,7 +57,7 @@ impl Default for NodeConfig {
 
 #[derive(Clone, Debug)]
 pub struct Node {
-    pub(crate) op_store: MemoryStore<LogId, Extensions>,
+    pub(crate) op_store: OpStore,
     pub network: Network<Topic>,
     chats: Arc<RwLock<HashMap<ChatId, Chat>>>,
     author_store: AuthorStore<Topic>,
@@ -66,7 +67,7 @@ pub struct Node {
     /// mapping from space operations to header hashes, so that dependencies
     /// can be declared
     space_dependencies: Arc<RwLock<HashMap<OperationId, p2panda_core::Hash>>>,
-    config: NodeConfig,
+    _config: NodeConfig,
     private_key: PrivateKey,
     friends: Arc<RwLock<HashMap<PK, Friend>>>,
     notification_tx: Option<mpsc::Sender<Notification>>,
@@ -78,7 +79,7 @@ impl Node {
     #[tracing::instrument(skip_all, fields(me = ?PK::from(private_key.public_key())))]
     pub async fn new(
         private_key: PrivateKey,
-        config: NodeConfig,
+        _config: NodeConfig,
         notification_tx: Option<mpsc::Sender<Notification>>,
     ) -> Result<Self> {
         let public_key = PK::from(private_key.public_key());
@@ -158,14 +159,14 @@ impl Node {
         let manager = DashManager::new(spaces_store.clone(), forge, rng).unwrap();
 
         let node = Self {
-            op_store,
+            op_store: OpStore::from(op_store),
             author_store,
             spaces_store,
             network,
             chats,
             manager: manager.clone(),
             space_dependencies: Arc::new(RwLock::new(HashMap::new())),
-            config,
+            _config,
             private_key,
             friends: Arc::new(RwLock::new(HashMap::new())),
             notification_tx,
@@ -203,7 +204,7 @@ impl Node {
             )
             .await?;
 
-        let header = self
+        let _header = self
             .author_operation(chat_id.into(), Payload::SpaceControl(msgs))
             .await?;
 
